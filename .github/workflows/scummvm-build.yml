@@ -35,6 +35,8 @@ jobs:
           push: false
           load: true
           tags: scummvm-builder:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: 5. Compile ScummVM and Package
         # Run the actual build process inside the ARM64 container
