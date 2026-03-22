@@ -1,0 +1,121 @@
+name: ScummVM AARCH64 Strict Build (No-Symlink Libs)
+
+on:
+  workflow_dispatch: # Manual trigger for mobile/tablet
+
+jobs:
+  build-scummvm:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04 # Match target environment
+
+    steps:
+      - name: Checkout ScummVM (branch-2026-1-0)
+        run: |
+          # Use your exact clone command with submodules
+          git clone -b branch-2026-1-0 --recurse-submodules -j$(nproc) https://github.com/scummvm/scummvm.git source
+
+      - name: Checkout Your Patches
+        uses: actions/checkout@v4
+        with:
+          path: build-scripts
+
+      - name: Setup Multi-arch and Cross-Tools
+        run: |
+          # Prepare environment for aarch64 cross-compilation
+          dpkg --add-architecture arm64
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential pkg-config git python3 wget curl p7zip-full cmake \
+            g++-aarch64-linux-gnu gcc-aarch64-linux-gnu
+
+      - name: Build Custom SDL 2.26.2 (Source)
+        run: |
+          # Build SDL 2.26.2 as instructed with --prefix=/usr
+          wget https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.26.2.tar.gz
+          tar -xzf release-2.26.2.tar.gz
+          cd SDL-release-2.26.2
+          ./configure --host=aarch64-linux-gnu --prefix=/usr \
+            --disable-video-x11 --disable-pulseaudio --disable-esd
+          make -j$(nproc)
+          make install
+
+      - name: Build FluidSynth v2.3.4 (Strict v2.3.4)
+        run: |
+          # Build FluidSynth from source with exact cmake options
+          git clone --recursive https://github.com/FluidSynth/fluidsynth.git
+          cd fluidsynth && git checkout v2.3.4
+          mkdir -p build && cd build
+          cmake -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_INSTALL_PREFIX=/usr -DLIB_SUFFIX="" ..
+          make -j$(nproc)
+          make install
+
+      - name: Apply All Patches (000 to 003)
+        run: |
+          cd source
+          PATCH_DIR="../build-scripts/patches"
+          # Apply patches in numerical order (000 -> 003)
+          for patchfile in $(ls $PATCH_DIR/*.patch | sort); do
+            filename=$(basename "$patchfile")
+            if [[ "$filename" == "scummvm-002-ultima8-korean.patch" ]]; then
+              # Special rule: Force git apply even if the patch is 'broken'
+              git apply --whitespace=fix "$patchfile" || git apply --ignore-whitespace "$patchfile"
+            else
+              # Standard apply for others
+              git apply "$patchfile" || patch -p1 < "$patchfile"
+            fi
+          done
+
+      - name: Configure and Build ScummVM
+        run: |
+          cd source
+          # Export PKG_CONFIG_PATH for cross-compiled libraries in /usr
+          export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/pkgconfig
+          ./configure \
+            --host=aarch64-linux-gnu --backend=sdl --enable-optimizations \
+            --opengl-mode=gles2 --enable-vkeybd --disable-debug \
+            --enable-release --enable-fluidsynth --enable-all-engines \
+            --with-sdl-prefix=/usr --extra-cflags="-I/usr/include" --extra-ldflags="-L/usr/lib"
+          make -j$(nproc)
+
+      - name: Packaging - Resolve and Rename Shared Libs
+        run: |
+          # Create final distribution structure
+          mkdir -p dist/scummvm/libs
+          cp source/scummvm dist/scummvm/
+          aarch64-linux-gnu-strip dist/scummvm/scummvm
+          
+          # Copy essential engine data files
+          if [ -d "source/dist-generic/engine-data" ]; then
+            cp source/dist-generic/engine-data/*.dat dist/scummvm/
+          fi
+          
+          # Resolve dependencies and rename files to match SONAME
+          echo "Processing dependencies..."
+          NEEDED_LIBS=$(aarch64-linux-gnu-readelf -d dist/scummvm/scummvm | grep NEEDED | awk -F'[' '{print $2}' | awk -F']' '{print $1}')
+          
+          for lib in $NEEDED_LIBS; do
+            # Find the actual library file in system paths
+            LIB_PATH=$(find /usr/lib/aarch64-linux-gnu /usr/lib -name "$lib" -print -quit)
+            
+            if [ -n "$LIB_PATH" ]; then
+              # Copy the actual binary content (-L) and rename it to the name the binary expects
+              echo "Mapping: $lib -> Hard-copying from $LIB_PATH"
+              cp -L "$LIB_PATH" "dist/scummvm/libs/$lib"
+            else
+              echo "Warning: Path for $lib not found"
+            fi
+          done
+
+          # Final Ultra 7z compression
+          cd dist
+          7z a -t7z -m0=lzma2 -mx=9 -md=128m -mfb=273 -ms=on scummvm_Final.7z ./scummvm/*
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScummVM-AARCH64-Ready
+          path: dist/scummvm_Final.7z
