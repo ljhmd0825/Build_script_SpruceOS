@@ -2,104 +2,155 @@ name: ScummVM AARCH64 Release Build
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
+    inputs:
+      build_type:
+        description: 'Select Build Type'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - 'standard'    # Option 1: Patch 000 only
+          - 'korean'      # Option 2: All patches (000-003)
+          - 'both'        # Option 3: Build both standard and korean
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: write
+    
     steps:
       - name: 1. Checkout Repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: 2. Set up QEMU for ARM64 Emulation
-        # Required to run and build ARM64 images on x86_64 runners
+      - name: 2. Set up QEMU for ARM64
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
 
       - name: 3. Set up Docker Buildx
-        # Enables multi-arch container builds
         uses: docker/setup-buildx-action@v3
 
-      - name: 4. Build Custom Build-Environment Image
-        # This step builds a Docker image containing all dependencies from your guide
+      - name: 4. Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 5. Build and Push Environment Image
+        # Save image to GHCR to avoid rebuilding dependencies next time
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/arm64
-          push: false
-          load: true
-          tags: scummvm-builder:latest
+          push: true
+          tags: ghcr.io/${{ github.repository }}/scummvm-builder:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 5. Compile ScummVM and Package
-        # Run the actual build process inside the ARM64 container
+      - name: 6. Restore ccache
+        # Essential for 6-hour timeout. This saves/restores partial build results.
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: scummvm-ccache-${{ github.ref }}-${{ github.sha }}
+          restore-keys: |
+            scummvm-ccache-${{ github.ref }}-
+            scummvm-ccache-
+
+      - name: 7. Execution Logic (Build & Package)
         run: |
-          docker run --rm -v ${{ github.workspace }}:/work scummvm-builder:latest /bin/bash -c "
-            cd /work
+          # Internal build function to handle patching and compiling
+          run_build() {
+            local label=$1
+            local mode=$2
+            local out_dir="OUT_DIR_${label}"
             
-            # Clone ScummVM Source
-            git clone -b branch-2026-1-0 --recurse-submodules https://github.com/scummvm/scummvm.git src
-            cd src
+            echo "Starting build for: ${label}"
 
-            # [Patching] Apply custom patches (e.g., SSL/cacert environment)
-            # Fix line endings (CRLF to LF) to ensure patches apply correctly
-            find . -type f -name '*.[ch]*' | xargs sed -i 's/\r$//'
-            if [ -d \"../patches\" ]; then
-              for p in ../patches/*.patch; do
-                echo \"Applying: \$p\"
-                git apply --ignore-whitespace \"\$p\" || patch -p1 < \"\$p\"
-              done
-            fi
+            docker run --rm \
+              -v ${{ github.workspace }}:/work \
+              -v ${{ github.workspace }}/.ccache:/root/.ccache \
+              -e CCACHE_DIR=/root/.ccache \
+              ghcr.io/${{ github.repository }}/scummvm-builder:latest /bin/bash -c "
+                cd /work
+                [ -d src ] || git clone -b branch-2026-1-0 --recurse-submodules https://github.com/scummvm/scummvm.git src
+                cd src
+                
+                # Reset source to clean state before applying selected patches
+                git reset --hard
+                find . -type f -name '*.[ch]*' | xargs sed -i 's/\r$//'
 
-            # [Build] Configure with AARCH64 optimized flags from your guide
-            ./configure --backend=sdl --enable-optimizations --opengl-mode=gles2 \
-              --enable-vkeybd --disable-debug --enable-release --enable-fluidsynth \
-              --enable-all-engines 2>&1 | tee ../configure_summary.txt
-            
-            make -j$(nproc)
-            strip scummvm
+                # [Patch Group 1] Mandatory (000-cacert)
+                echo 'Applying mandatory patch 000...'
+                git apply ../patches/scummvm-000-cacert-env.patch || true
 
-            # [Packaging] Create strict spruceOS-compatible structure (OUT_DIR)
-            mkdir -p ../OUT_DIR/LICENSES ../OUT_DIR/Theme ../OUT_DIR/Extra/shaders ../OUT_DIR/libs
-            cp -f scummvm ../OUT_DIR/
-            cp ../configure_summary.txt ../OUT_DIR/
-            cp config.log ../OUT_DIR/
-            cp -f LICENSES/* ../OUT_DIR/LICENSES/
-            cp -f gui/themes/*.dat gui/themes/*.zip ../OUT_DIR/Theme/
-            cp -f dists/networking/wwwroot.zip ../OUT_DIR/Theme/
-            cp -f -r dists/engine-data/* ../OUT_DIR/Extra/
-            cp -f backends/vkeybd/packs/*.zip ../OUT_DIR/Extra/
-            cp -f dists/soundfonts/Roland_SC-55.sf2 ../OUT_DIR/Extra/
-            
-            # Extract Shaders (Requirement)
-            find engines/ -type f \( -name \"*.fragment\" -o -name \"*.vertex\" \) -exec cp -f {} \"../OUT_DIR/Extra/shaders/\" \;
+                # [Patch Group 2] Korean Engines (001, 002, 003)
+                if [ \"$mode\" == \"full\" ]; then
+                  echo 'Applying Korean patches 001, 002, 003...'
+                  git apply ../patches/scummvm-001-british-korean.patch || true
+                  git apply ../patches/scummvm-002-ultima8-korean.patch || true
+                  git apply ../patches/scummvm-003-sci-add-korean.patch || true
+                fi
 
-            # Extract Shared Libraries (Strictly for spruceOS runtime)
-            for lib in \$(readelf -d ../OUT_DIR/scummvm | grep NEEDED | awk -F'[' '{print \$2}' | awk -F']' '{print \$1}'); do
-              LIB_PATH=\$(find /usr/lib/aarch64-linux-gnu /usr/lib -name \"\$lib\" -print -quit)
-              [ -n \"\$LIB_PATH\" ] && cp -L \"\$LIB_PATH\" \"../OUT_DIR/libs/\"
-            done
-          "
+                # Configure with ccache enabled
+                ./configure --backend=sdl --enable-optimizations --opengl-mode=gles2 \
+                  --enable-vkeybd --disable-debug --enable-release --enable-fluidsynth \
+                  --enable-all-engines --enable-ccache
+                
+                make -j$(nproc)
+                strip scummvm
 
-      - name: 6. Create Artifact Archive
-        # Use 7z with your specific ultra-compression settings
+                # Packaging for spruceOS
+                mkdir -p ../${out_dir}/LICENSES ../${out_dir}/Theme ../${out_dir}/Extra/shaders ../${out_dir}/libs
+                cp -f scummvm ../${out_dir}/
+                cp -f LICENSES/* ../${out_dir}/LICENSES/
+                cp -f gui/themes/*.dat gui/themes/*.zip ../${out_dir}/Theme/
+                cp -f dists/networking/wwwroot.zip ../${out_dir}/Theme/
+                cp -f -r dists/engine-data/* ../${out_dir}/Extra/
+                cp -f backends/vkeybd/packs/*.zip ../${out_dir}/Extra/
+                cp -f dists/soundfonts/Roland_SC-55.sf2 ../${out_dir}/Extra/
+                find engines/ -type f \( -name '*.fragment' -o -name '*.vertex' \) -exec cp -f {} ../${out_dir}/Extra/shaders/ \;
+
+                # Shared library extraction
+                for lib in \$(readelf -d ../${out_dir}/scummvm | grep NEEDED | awk -F'[' '{print \$2}' | awk -F']' '{print \$1}'); do
+                  LIB_PATH=\$(find /usr/lib/aarch64-linux-gnu /usr/lib -name \"\$lib\" -print -quit)
+                  [ -n \"\$LIB_PATH\" ] && cp -L \"\$LIB_PATH\" \"../${out_dir}/libs/\"
+                done
+              "
+          }
+
+          # Selection Logic
+          TYPE="${{ github.event.inputs.build_type }}"
+          if [ "$TYPE" == "standard" ] || [ "$TYPE" == "both" ]; then
+            run_build "Standard" "basic"
+          fi
+          if [ "$TYPE" == "korean" ] || [ "$TYPE" == "both" ]; then
+            # Thanks to ccache, this second build will be very fast if 'both' is selected
+            run_build "Korean" "full"
+          fi
+
+      - name: 8. Create Final Archives
         run: |
           sudo apt-get install -y p7zip-full
-          7z a -t7z -m0=lzma2 -mx=9 -md=128m -mfb=273 -ms=on scummvm_AARCH64_spruce.7z ./OUT_DIR/*
+          if [ -d "OUT_DIR_Standard" ]; then
+            7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_standard.7z ./OUT_DIR_Standard/*
+          fi
+          if [ -d "OUT_DIR_Korean" ]; then
+            7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_korean.7z ./OUT_DIR_Korean/*
+          fi
 
-      - name: 7. Upload to GitHub Release
-        # Automatically uploads the 7z when a version tag (v*) is pushed
+      - name: 9. Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: scummvm_AARCH64_spruce.7z
-          body: "ScummVM AARCH64 build for spruceOS. Build log attached in configure_summary.txt."
+          files: |
+            scummvm_AARCH64_standard.7z
+            scummvm_AARCH64_korean.7z
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
