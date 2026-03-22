@@ -1,135 +1,133 @@
-name: ScummVM AARCH64 Strict Build (No-Symlink Libs)
+name: ScummVM AARCH64 Release Build
 
 on:
-  workflow_dispatch: # Manual trigger for mobile/tablet
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   build-scummvm:
     runs-on: ubuntu-latest
-    container:
-      image: ubuntu:20.04 # Match target environment
-
     steps:
-      - name: Checkout ScummVM (branch-2026-1-0)
-        run: |
-          # Use your exact clone command with submodules
-          git clone -b branch-2026-1-0 --recurse-submodules -j$(nproc) https://github.com/scummvm/scummvm.git source
-
-      - name: Checkout Your Patches
+      - name: 1. Checkout ScummVM Source
         uses: actions/checkout@v4
         with:
-          path: build-scripts
+          repository: scummvm/scummvm
+          ref: branch-2026-1-0
+          submodules: recursive
+          path: src
 
-      - name: Setup Multi-arch and Cross-Tools
-        run: |
-          # Prepare environment for aarch64 cross-compilation
-          dpkg --add-architecture arm64
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            build-essential pkg-config git python3 wget curl p7zip-full cmake \
-            g++-aarch64-linux-gnu gcc-aarch64-linux-gnu
-
-      - name: Build Custom SDL 2.26.2 (Source)
-        run: |
-          # Build SDL 2.26.2 as instructed with --prefix=/usr
-          wget https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.26.2.tar.gz
-          tar -xzf release-2.26.2.tar.gz
-          cd SDL-release-2.26.2
-          ./configure --host=aarch64-linux-gnu --prefix=/usr \
-            --disable-video-x11 --disable-pulseaudio --disable-esd
-          make -j$(nproc)
-          make install
-
-      - name: Build FluidSynth v2.3.4 (Strict v2.3.4)
-        run: |
-          # Build FluidSynth from source with exact cmake options
-          git clone --recursive https://github.com/FluidSynth/fluidsynth.git
-          cd fluidsynth && git checkout v2.3.4
-          mkdir -p build && cd build
-          cmake -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
-            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
-            -DCMAKE_INSTALL_PREFIX=/usr -DLIB_SUFFIX="" ..
-          make -j$(nproc)
-          make install
-
-      - name: Apply All Patches (000 to 003)
-        run: |
-          cd source
-          PATCH_DIR="../build-scripts/patches"
-          # Apply patches in numerical order (000 -> 003)
-          for patchfile in $(ls $PATCH_DIR/*.patch | sort); do
-            filename=$(basename "$patchfile")
-            if [[ "$filename" == "scummvm-002-ultima8-korean.patch" ]]; then
-              git apply --whitespace=fix "$patchfile" || git apply --ignore-whitespace "$patchfile"
-            else
-              git apply "$patchfile" || patch -p1 < "$patchfile"
-            fi
-          done
-
-      - name: Configure and Build ScummVM
-        run: |
-          cd source
-          export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/pkgconfig
-          # Capture full configure summary as requested
-          ./configure \
-            --host=aarch64-linux-gnu --backend=sdl --enable-optimizations \
-            --opengl-mode=gles2 --enable-vkeybd --disable-debug \
-            --enable-release --enable-fluidsynth --enable-all-engines \
-            --with-sdl-prefix=/usr --extra-cflags="-I/usr/include" --extra-ldflags="-L/usr/lib" 2>&1 | tee ../configure_summary.txt
-          make -j$(nproc)
-
-      - name: Packaging - Resolve, Copy and Rename (Strict OUT_DIR Logic)
-        run: |
-          # 1. Create the exact OUT_DIR structure you provided
-          mkdir -p OUT_DIR/LICENSES OUT_DIR/Theme OUT_DIR/Extra OUT_DIR/Extra/shaders OUT_DIR/libs
-          
-          cd source
-          # Copy binary and strip
-          cp -f scummvm ../OUT_DIR/
-          aarch64-linux-gnu-strip ../OUT_DIR/scummvm
-          
-          # Copy requested log and summary files
-          cp ../configure_summary.txt ../OUT_DIR/
-          cp config.log ../OUT_DIR/
-
-          # 2. Detailed copy operations from your script
-          cp -f LICENSES/* ../OUT_DIR/LICENSES/
-          cp -f dists/soundfonts/COPYRIGHT.Roland_SC-55 ../OUT_DIR/LICENSES/
-          cp -f gui/themes/*.dat gui/themes/*.zip ../OUT_DIR/Theme/
-          cp -f dists/networking/wwwroot.zip ../OUT_DIR/Theme/
-          cp -f -r dists/engine-data/* ../OUT_DIR/Extra/
-          
-          # Cleanup Extra folder as instructed
-          rm -rf ../OUT_DIR/Extra/patches ../OUT_DIR/Extra/testbed-audiocd-files
-          rm -f ../OUT_DIR/Extra/README ../OUT_DIR/Extra/*.mk ../OUT_DIR/Extra/*.sh
-          
-          # Additional assets
-          cp -f backends/vkeybd/packs/vkeybd_default.zip ../OUT_DIR/Extra/
-          cp -f backends/vkeybd/packs/vkeybd_small.zip ../OUT_DIR/Extra/
-          cp -f dists/soundfonts/Roland_SC-55.sf2 ../OUT_DIR/Extra/
-          
-          # Find and copy shaders
-          find engines/ -type f \( -name "*.fragment" -o -name "*.vertex" \) -exec cp -f {} "../OUT_DIR/Extra/shaders/" \;
-
-          # 3. Resolve dependencies and hard-copy shared libs (No-Symlink)
-          echo "Processing shared library dependencies..."
-          NEEDED_LIBS=$(aarch64-linux-gnu-readelf -d ../OUT_DIR/scummvm | grep NEEDED | awk -F'[' '{print $2}' | awk -F']' '{print $1}')
-          for lib in $NEEDED_LIBS; do
-            LIB_PATH=$(find /usr/lib/aarch64-linux-gnu /usr/lib -name "$lib" -print -quit)
-            if [ -n "$LIB_PATH" ]; then
-              echo "Mapping: $lib -> Copying from $LIB_PATH"
-              cp -L "$LIB_PATH" "../OUT_DIR/libs/$lib"
-            fi
-          done
-
-      - name: Final Ultra 7z Compression
-        run: |
-          # Ultra compression options as instructed
-          7z a -t7z -m0=lzma2 -mx=9 -md=128m -mfb=273 -ms=on scummvm_Final.7z ./OUT_DIR/*
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: 2. Checkout Patches & Assets
+        uses: actions/checkout@v4
         with:
-          name: ScummVM-AARCH64-Ready
-          path: scummvm_Final.7z
+          path: build-assets
+
+      - name: 3. Setup QEMU for ARM64 Emulation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binfmt-support qemu-user-static p7zip-full
+
+      - name: 4. Build inside ARM64v8 Docker Container
+        uses: addnab/docker-run-action@v3
+        with:
+          image: arm64v8/ubuntu:20.04
+          options: -v ${{ github.workspace }}:/work
+          run: |
+            cd /work
+            apt-get update && apt-get upgrade -y
+
+            # [Step A] Install 'Helpful development tools' from your guide
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              build-essential git wget python3 python3-pip python3-setuptools \
+              ninja-build libopenal-dev premake4 autoconf libevdev-dev ffmpeg \
+              libboost-all-dev pkg-config zlib1g-dev libsdl-mixer1.2-dev \
+              libsdl1.2-dev libsdl-gfx1.2-dev libsdl2-mixer-dev clang cmake \
+              mercurial libarchive13 libcurl4 libfreetype6-dev libgbm-dev \
+              libsdl-image1.2-dev magics++
+
+            # [Step B] Build Custom SDL 2.26.2 (Strictly following your version)
+            # Remove system SDL2 to prevent linking conflicts
+            rm -f /usr/lib/aarch64-linux-gnu/libSDL2.*
+            wget https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.26.2.tar.gz
+            tar -xzf release-2.26.2.tar.gz && cd SDL-release-2.26.2
+            ./configure --prefix=/usr --disable-video-x11 --disable-pulseaudio --disable-esd
+            make -j$(nproc) && make install
+            ldconfig && cd ..
+
+            # [Step C] Install 'Additional packages' for ScummVM
+            DEBIAN_FRONTEND=noninteractive apt-get install -y \
+              liba52-0.7.4-dev libjpeg62-turbo-dev libfaad-dev libsdl2-net-dev \
+              libspeechd-dev libfribidi-dev libglew-dev libtheora-dev \
+              libcurl4-openssl-dev libmpeg2-4-dev libgif-dev
+            
+            # Build FluidSynth v2.3.4 as requested
+            git clone --recursive https://github.com/FluidSynth/fluidsynth.git
+            cd fluidsynth && git checkout v2.3.4
+            mkdir build && cd build
+            cmake -DCMAKE_INSTALL_PREFIX=/usr -DLIB_SUFFIX="" ..
+            make -j$(nproc) && make install
+            ldconfig && cd ../..
+
+            # [Step D] Apply Patches (Handling WhiteSpaces & Line Endings)
+            cd src
+            # Fix potential line ending issues before applying patches
+            find . -type f -name "*.h" -o -name "*.cpp" -o -name "*.patch" | xargs sed -i 's/\r$//'
+            
+            # Apply your specific patches (e.g., cacert-env patch)
+            # Using --ignore-whitespace to ensure successful application
+            for patch_file in ../build-assets/patches/*.patch; do
+              if [ -f "$patch_file" ]; then
+                echo "Applying patch: $patch_file"
+                git apply --ignore-whitespace --verbose "$patch_file" || patch -p1 < "$patch_file"
+              fi
+            done
+
+            # [Step E] Configure & Build ScummVM (AARCH64 Optimized)
+            ./configure --backend=sdl --enable-optimizations --opengl-mode=gles2 \
+              --enable-vkeybd --disable-debug --enable-release --enable-fluidsynth \
+              --enable-all-engines 2>&1 | tee ../configure_summary.txt
+            
+            make -j$(nproc)
+            strip scummvm
+
+            # [Step F] Packaging for Handheld Device (Strict OUT_DIR structure)
+            mkdir -p ../OUT_DIR/LICENSES ../OUT_DIR/Theme ../OUT_DIR/Extra/shaders ../OUT_DIR/libs
+            cp -f scummvm ../OUT_DIR/
+            cp ../configure_summary.txt ../OUT_DIR/
+            cp config.log ../OUT_DIR/
+            cp -f LICENSES/* ../OUT_DIR/LICENSES/
+            cp -f dists/soundfonts/COPYRIGHT.Roland_SC-55 ../OUT_DIR/LICENSES/
+            cp -f gui/themes/*.dat gui/themes/*.zip ../OUT_DIR/Theme/
+            cp -f dists/networking/wwwroot.zip ../OUT_DIR/Theme/
+            cp -f -r dists/engine-data/* ../OUT_DIR/Extra/
+            
+            # Clean up unnecessary files as per your guide
+            rm -rf ../OUT_DIR/Extra/patches ../OUT_DIR/Extra/testbed-audiocd-files
+            cp -f backends/vkeybd/packs/*.zip ../OUT_DIR/Extra/
+            cp -f dists/soundfonts/Roland_SC-55.sf2 ../OUT_DIR/Extra/
+            
+            # Extract Shaders (Requirement)
+            find engines/ -type f \( -name "*.fragment" -o -name "*.vertex" \) -exec cp -f {} "../OUT_DIR/Extra/shaders/" \;
+
+            # Copy required Shared Libraries (Strictly for spruceOS runtime)
+            for lib in $(readelf -d ../OUT_DIR/scummvm | grep NEEDED | awk -F'[' '{print $2}' | awk -F']' '{print $1}'); do
+              # Locate the 64-bit shared library path
+              LIB_PATH=$(find /usr/lib/aarch64-linux-gnu /usr/lib -name "$lib" -print -quit)
+              if [ -n "$LIB_PATH" ]; then
+                cp -L "$LIB_PATH" "../OUT_DIR/libs/"
+              fi
+            done
+
+      - name: 5. Compress Result (Ultra 7z)
+        run: |
+          7z a -t7z -m0=lzma2 -mx=9 -md=128m -mfb=273 -ms=on scummvm_AARCH64_spruce.7z ./OUT_DIR/*
+
+      - name: 6. Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: scummvm_AARCH64_spruce.7z
+          body_path: configure_summary.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
