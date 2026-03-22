@@ -28,11 +28,18 @@ RUN rm -f /usr/lib/aarch64-linux-gnu/libSDL2.* && \
     ./configure --prefix=/usr --disable-video-x11 --disable-pulseaudio --disable-esd && \
     make -j$(nproc) && make install && ldconfig && cd .. && rm -rf SDL-release-2.26.2
 
-# 3. Build FluidSynth v2.3.4 (As per your requirement)
-RUN git clone --recursive https://github.com/FluidSynth/fluidsynth.git && \
+# 3. Build FluidSynth v2.3.4 (Fixing Readline Error)
+# [Action] Added libreadline-dev and explicit CMake flags
+RUN apt-get update && apt-get install -y libreadline-dev && \
+    git clone --recursive https://github.com/FluidSynth/fluidsynth.git && \
     cd fluidsynth && git checkout v2.3.4 && \
     mkdir build && cd build && \
-    cmake -DCMAKE_INSTALL_PREFIX=/usr -DLIB_SUFFIX="" .. && \
+    cmake -DCMAKE_INSTALL_PREFIX=/usr \
+          -DLIB_SUFFIX="" \
+          -DENABLE_READLINE=OFF \
+          -DENABLE_LASH=OFF \
+          -DENABLE_JACK=OFF \
+          .. && \
     make -j$(nproc) && make install && ldconfig && cd ../.. && rm -rf fluidsynth
 
 WORKDIR /work
