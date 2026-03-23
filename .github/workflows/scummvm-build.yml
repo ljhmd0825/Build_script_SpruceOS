@@ -108,7 +108,7 @@ jobs:
                 # Configure with optimizations and ccache enabled
                 ./configure --backend=sdl --enable-optimizations --opengl-mode=gles2 \
                   --enable-vkeybd --disable-debug --enable-release --enable-fluidsynth \
-                  --enable-all-engines --enable-ccache
+                  --enable-all-engines
                 
                 # Use all available CPU cores for compilation
                 make -j$(nproc)
