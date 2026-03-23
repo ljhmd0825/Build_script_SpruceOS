@@ -37,7 +37,7 @@ jobs:
       - name: 3. Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 4. Login to GHCR (GitHub Container Registry)
+      - name: 4. Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -55,27 +55,26 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 6. Restore ccache (Recovery from previous sessions)
+      - name: 6. Restore ccache
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          # Unique key per run allows fresh saves while restore-keys pulls the latest progress
-          key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}
+          key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
+            scummvm-ccache-${{ github.ref }}-${{ github.run_id }}-
             scummvm-ccache-${{ github.ref }}-
             scummvm-ccache-
 
-      - name: 7-1. Standard Build (Part 1 - 5 Hour Marathon)
-        # Force a stop at 300m (5h) to trigger the mandatory cache save
-        timeout-minutes: 300
+      - name: 7. Main Build Phase
+        id: build_main
+        timeout-minutes: 340
         continue-on-error: true
         run: |
+          mkdir -p .ccache
           run_build() {
             local label=$1
             local mode=$2
             local out_dir="OUT_DIR_${label}"
-            echo "Starting build process for: ${label}"
-
             docker run --rm \
               -v ${{ github.workspace }}:/work \
               --platform linux/arm64 \
@@ -87,21 +86,17 @@ jobs:
                 cd src
                 git reset --hard
                 find . -type f -name '*.[ch]*' | xargs sed -i 's/\r$//'
-                
                 git apply ../patches/scummvm-000-cacert-env.patch || true
                 if [ \"$mode\" == \"full\" ]; then
                   git apply ../patches/scummvm-001-british-korean.patch || true
                   git apply ../patches/scummvm-002-ultima8-korean.patch || true
                   git apply ../patches/scummvm-003-sci-add-korean.patch || true
                 fi
-
                 ./configure --backend=sdl --enable-optimizations --opengl-mode=gles2 \
                   --enable-vkeybd --disable-debug --enable-release --enable-fluidsynth \
                   --enable-all-engines
-                
                 make -j$(nproc)
                 strip scummvm
-
                 mkdir -p ../${out_dir}/LICENSES ../${out_dir}/Theme ../${out_dir}/Extra/shaders ../${out_dir}/libs
                 cp -f scummvm ../${out_dir}/
                 cp -f LICENSES/* ../${out_dir}/LICENSES/
@@ -115,51 +110,10 @@ jobs:
                   LIB_PATH=\$(find /usr/lib/aarch64-linux-gnu /usr/lib -name \"\$lib\" -print -quit)
                   [ -n \"\$LIB_PATH\" ] && cp -L \"\$LIB_PATH\" \"../${out_dir}/libs/\"
                 done
+                ccache -s
+                sync
               "
           }
-          
-          TYPE="${{ github.event.inputs.build_type }}"
-          if [ "$TYPE" == "standard" ] || [ "$TYPE" == "both" ]; then
-            run_build "Standard" "basic"
-          fi
-
-      - name: 7-2. Intermediate Cache Save (Mandatory)
-        # This step secures the 5-hour progress even if 7-1 was timed out
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: .ccache
-          key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}-checkpoint
-
-      - name: 7-3. Final Build Phase (Resume Standard & Korean)
-        # Remaining time (~40-50m) to finish or start the Korean build
-        timeout-minutes: 50
-        run: |
-          run_build() {
-            local label=$1
-            local mode=$2
-            local out_dir="OUT_DIR_${label}"
-            docker run --rm \
-              -v ${{ github.workspace }}:/work \
-              --platform linux/arm64 \
-              -v ${{ github.workspace }}/.ccache:/root/.ccache \
-              -e CCACHE_DIR=/root/.ccache \
-              ghcr.io/${{ env.REPO_LOWER }}/scummvm-builder:latest /bin/bash -c "
-                cd /work/src
-                ./configure --backend=sdl --enable-optimizations --opengl-mode=gles2 \
-                  --enable-vkeybd --disable-debug --enable-release --enable-fluidsynth \
-                  --enable-all-engines
-                make -j$(nproc)
-                strip scummvm
-                mkdir -p ../${out_dir}/libs
-                cp -f scummvm ../${out_dir}/
-                for lib in \$(readelf -d ../${out_dir}/scummvm | grep NEEDED | awk -F'[' '{print \$2}' | awk -F']' '{print \$1}'); do
-                  LIB_PATH=\$(find /usr/lib/aarch64-linux-gnu /usr/lib -name \"\$lib\" -print -quit)
-                  [ -n \"\$LIB_PATH\" ] && cp -L \"\$LIB_PATH\" \"../${out_dir}/libs/\"
-                done
-              "
-          }
-          
           TYPE="${{ github.event.inputs.build_type }}"
           if [ "$TYPE" == "standard" ] || [ "$TYPE" == "both" ]; then
             run_build "Standard" "basic"
@@ -168,21 +122,22 @@ jobs:
             run_build "Korean" "full"
           fi
 
-      - name: 8. Final Cache Save
+      - name: 8. Mandatory Cache Save
         if: always()
         uses: actions/cache/save@v4
         with:
           path: .ccache
-          key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}-final
+          key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: 9. Create Final Archives (7-Zip)
+      - name: 9. Create Final Archives
+        if: steps.build_main.outcome == 'success'
         run: |
           sudo apt-get install -y p7zip-full
           [ -d "OUT_DIR_Standard" ] && 7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_standard.7z ./OUT_DIR_Standard/*
           [ -d "OUT_DIR_Korean" ] && 7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_korean.7z ./OUT_DIR_Korean/*
 
       - name: 10. Upload to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.build_main.outcome == 'success' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
