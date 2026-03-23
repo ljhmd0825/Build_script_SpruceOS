@@ -1,4 +1,4 @@
-name: ScummVM AARCH64 Release Build
+Name: ScummVM AARCH64 Release Build
 
 on:
   workflow_dispatch:
@@ -59,15 +59,15 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: scummvm-ccache-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            scummvm-ccache-${{ github.ref }}-${{ github.run_id }}-
-            scummvm-ccache-${{ github.ref }}-
+            scummvm-ccache-${{ github.ref_name }}-${{ github.run_id }}-
+            scummvm-ccache-${{ github.ref_name }}-
             scummvm-ccache-
 
       - name: 7. Main Build Phase
         id: build_main
-        timeout-minutes: 340
+        timeout-minutes: 300
         continue-on-error: true
         run: |
           mkdir -p .ccache
@@ -122,12 +122,18 @@ jobs:
             run_build "Korean" "full"
           fi
 
-      - name: 8. Mandatory Cache Save
+      - name: 8-1. Fix Permissions for Save
+        if: always()
+        run: |
+          sudo chown -R $USER:$USER .ccache || true
+          du -sh .ccache || true
+
+      - name: 8-2. Mandatory Cache Save
         if: always()
         uses: actions/cache/save@v4
         with:
           path: .ccache
-          key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: scummvm-ccache-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.run_number }}
 
       - name: 9. Create Final Archives
         if: steps.build_main.outcome == 'success'
