@@ -100,7 +100,7 @@ jobs:
                 # [Configure & Build]
                 ./configure
                 
-                make -j$(nproc)
+                make -j$(nproc) TARGET=mame
                 
                 # Organize Output
                 mkdir -p ../${out_dir}
