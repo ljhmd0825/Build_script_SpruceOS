@@ -51,6 +51,7 @@ jobs:
           key: advmame-ccache-${{ github.sha }}
           restore-keys: |
             advmame-ccache-
+          save-always: true
 
       - name: 6. Execution Logic (Build & Package)
         run: |
@@ -106,7 +107,7 @@ jobs:
                 
                 # Organize Output
                 mkdir -p ../${out_dir}
-                cp obj/mame/linux/bin/advmame ../${out_dir}/advmame_${label}
+                cp obj/mame/linux/blend/advmame ../${out_dir}/advmame_${label}
               "
           }
 
