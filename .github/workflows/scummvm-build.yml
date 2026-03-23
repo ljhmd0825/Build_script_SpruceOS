@@ -27,8 +27,7 @@ jobs:
           submodules: recursive
 
       - name: 1.1. Prepare Repository Name
-        run: |
-          echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+        run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
       - name: 2. Set up QEMU for ARM64
         uses: docker/setup-qemu-action@v3
@@ -56,25 +55,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 6-1. Restore ccache
+      - name: 6. Restore ccache (Recovery from previous sessions)
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          # Using run_id ensures we never hit the "0MB immutability" trap
+          # Unique key per run allows fresh saves while restore-keys pulls the latest progress
           key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}
           restore-keys: |
             scummvm-ccache-${{ github.ref }}-
             scummvm-ccache-
 
-      - name: 7. Execution Logic (Build & Package)
-        # CRITICAL: Stop at 340m to allow 20m for cache upload before 6h SIGKILL
-        timeout-minutes: 340 
+      - name: 7-1. Standard Build (Part 1 - 5 Hour Marathon)
+        # Force a stop at 300m (5h) to trigger the mandatory cache save
+        timeout-minutes: 300
+        continue-on-error: true
         run: |
           run_build() {
             local label=$1
             local mode=$2
             local out_dir="OUT_DIR_${label}"
-            
             echo "Starting build process for: ${label}"
 
             docker run --rm \
@@ -86,15 +85,11 @@ jobs:
                 cd /work
                 [ -d src ] || git clone -b branch-2026-1-0 --recurse-submodules https://github.com/scummvm/scummvm.git src
                 cd src
-                
                 git reset --hard
                 find . -type f -name '*.[ch]*' | xargs sed -i 's/\r$//'
-
-                echo 'Applying mandatory patch 000...'
+                
                 git apply ../patches/scummvm-000-cacert-env.patch || true
-
                 if [ \"$mode\" == \"full\" ]; then
-                  echo 'Applying Korean patches 001, 002, 003...'
                   git apply ../patches/scummvm-001-british-korean.patch || true
                   git apply ../patches/scummvm-002-ultima8-korean.patch || true
                   git apply ../patches/scummvm-003-sci-add-korean.patch || true
@@ -115,16 +110,56 @@ jobs:
                 cp -f -r dists/engine-data/* ../${out_dir}/Extra/
                 cp -f backends/vkeybd/packs/*.zip ../${out_dir}/Extra/
                 cp -f dists/soundfonts/Roland_SC-55.sf2 ../${out_dir}/Extra/
-                
                 find engines/ -type f \( -name '*.fragment' -o -name '*.vertex' \) -exec cp -f {} ../${out_dir}/Extra/shaders/ \;
-
                 for lib in \$(readelf -d ../${out_dir}/scummvm | grep NEEDED | awk -F'[' '{print \$2}' | awk -F']' '{print \$1}'); do
                   LIB_PATH=\$(find /usr/lib/aarch64-linux-gnu /usr/lib -name \"\$lib\" -print -quit)
                   [ -n \"\$LIB_PATH\" ] && cp -L \"\$LIB_PATH\" \"../${out_dir}/libs/\"
                 done
               "
           }
+          
+          TYPE="${{ github.event.inputs.build_type }}"
+          if [ "$TYPE" == "standard" ] || [ "$TYPE" == "both" ]; then
+            run_build "Standard" "basic"
+          fi
 
+      - name: 7-2. Intermediate Cache Save (Mandatory)
+        # This step secures the 5-hour progress even if 7-1 was timed out
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}-checkpoint
+
+      - name: 7-3. Final Build Phase (Resume Standard & Korean)
+        # Remaining time (~40-50m) to finish or start the Korean build
+        timeout-minutes: 50
+        run: |
+          run_build() {
+            local label=$1
+            local mode=$2
+            local out_dir="OUT_DIR_${label}"
+            docker run --rm \
+              -v ${{ github.workspace }}:/work \
+              --platform linux/arm64 \
+              -v ${{ github.workspace }}/.ccache:/root/.ccache \
+              -e CCACHE_DIR=/root/.ccache \
+              ghcr.io/${{ env.REPO_LOWER }}/scummvm-builder:latest /bin/bash -c "
+                cd /work/src
+                ./configure --backend=sdl --enable-optimizations --opengl-mode=gles2 \
+                  --enable-vkeybd --disable-debug --enable-release --enable-fluidsynth \
+                  --enable-all-engines
+                make -j$(nproc)
+                strip scummvm
+                mkdir -p ../${out_dir}/libs
+                cp -f scummvm ../${out_dir}/
+                for lib in \$(readelf -d ../${out_dir}/scummvm | grep NEEDED | awk -F'[' '{print \$2}' | awk -F']' '{print \$1}'); do
+                  LIB_PATH=\$(find /usr/lib/aarch64-linux-gnu /usr/lib -name \"\$lib\" -print -quit)
+                  [ -n \"\$LIB_PATH\" ] && cp -L \"\$LIB_PATH\" \"../${out_dir}/libs/\"
+                done
+              "
+          }
+          
           TYPE="${{ github.event.inputs.build_type }}"
           if [ "$TYPE" == "standard" ] || [ "$TYPE" == "both" ]; then
             run_build "Standard" "basic"
@@ -133,23 +168,18 @@ jobs:
             run_build "Korean" "full"
           fi
 
-      - name: 8. Save ccache (Force Save)
-        # This step runs even if Step 7 times out, ensuring progress is kept
+      - name: 8. Final Cache Save
         if: always()
         uses: actions/cache/save@v4
         with:
           path: .ccache
-          key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}
+          key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}-final
 
       - name: 9. Create Final Archives (7-Zip)
         run: |
           sudo apt-get install -y p7zip-full
-          if [ -d "OUT_DIR_Standard" ]; then
-            7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_standard.7z ./OUT_DIR_Standard/*
-          fi
-          if [ -d "OUT_DIR_Korean" ]; then
-            7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_korean.7z ./OUT_DIR_Korean/*
-          fi
+          [ -d "OUT_DIR_Standard" ] && 7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_standard.7z ./OUT_DIR_Standard/*
+          [ -d "OUT_DIR_Korean" ] && 7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_korean.7z ./OUT_DIR_Korean/*
 
       - name: 10. Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
