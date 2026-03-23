@@ -58,16 +58,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 6. Restore ccache
+      - name: 6-1. Restore ccache
         # Persist compilation cache to overcome 6-hour GitHub Actions timeout
         uses: actions/cache@v4
         with:
           path: .ccache
-          key: scummvm-ccache-${{ github.ref }}-${{ github.sha }}
+          key: scummvm-ccache-${{ github.ref }}-${{ github.sha }}-v2
           restore-keys: |
             scummvm-ccache-${{ github.ref }}-
             scummvm-ccache-
-          save-always: true
 
       - name: 7. Execution Logic (Build & Package)
         run: |
@@ -145,6 +144,13 @@ jobs:
             # Second build is extremely fast due to ccache
             run_build "Korean" "full"
           fi
+
+      - name: 6-2. Save ccache
+        if: always() 
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: scummvm-ccache-${{ github.ref }}-${{ github.sha }}-v2
 
       - name: 8. Create Final Archives (7-Zip)
         run: |
