@@ -141,3 +141,13 @@ jobs:
         with:
           name: advmame-aarch64-builds
           path: "*.7z"
+
+      - name: 9. Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: always()
+        with:
+          files: "*.7z"
+          tag_name: "build-${{ github.run_id }}-${{ github.run_attempt }}"
+          name: "AdvanceMAME Build - ${{ github.run_id }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
