@@ -1,4 +1,4 @@
-Name: ScummVM AARCH64 Release Build
+name: ScummVM AARCH64 Release Build
 
 on:
   workflow_dispatch:
@@ -59,13 +59,12 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: scummvm-ccache-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: scummvm-ccache-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            scummvm-ccache-${{ github.ref_name }}-${{ github.run_id }}-
-            scummvm-ccache-${{ github.ref_name }}-
+            scummvm-ccache-${{ github.workflow }}-
             scummvm-ccache-
 
-      - name: 7. Main Build Phase
+      - name: 7. Execution Logic
         id: build_main
         timeout-minutes: 300
         continue-on-error: true
@@ -122,28 +121,31 @@ jobs:
             run_build "Korean" "full"
           fi
 
-      - name: 8-1. Fix Permissions for Save
+      - name: 8-1. Fix Permissions
         if: always()
         run: |
           sudo chown -R $USER:$USER .ccache || true
           du -sh .ccache || true
 
-      - name: 8-2. Mandatory Cache Save
+      - name: 8-2. Save ccache
         if: always()
         uses: actions/cache/save@v4
         with:
           path: .ccache
-          key: scummvm-ccache-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.run_number }}
+          key: scummvm-ccache-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: 9. Create Final Archives
-        if: steps.build_main.outcome == 'success'
         run: |
           sudo apt-get install -y p7zip-full
-          [ -d "OUT_DIR_Standard" ] && 7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_standard.7z ./OUT_DIR_Standard/*
-          [ -d "OUT_DIR_Korean" ] && 7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_korean.7z ./OUT_DIR_Korean/*
+          if [ -d "OUT_DIR_Standard" ]; then
+            7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_standard.7z ./OUT_DIR_Standard/*
+          fi
+          if [ -d "OUT_DIR_Korean" ]; then
+            7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_korean.7z ./OUT_DIR_Korean/*
+          fi
 
       - name: 10. Upload to GitHub Release
-        if: steps.build_main.outcome == 'success' && startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
