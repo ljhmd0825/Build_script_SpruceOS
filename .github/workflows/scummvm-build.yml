@@ -9,9 +9,9 @@ on:
         default: 'both'
         type: choice
         options:
-          - 'standard'    # Option 1: Patch 000 only
-          - 'korean'      # Option 2: All patches (000-003)
-          - 'both'        # Option 3: Build both standard and korean
+          - 'standard'
+          - 'korean'
+          - 'both'
 
 jobs:
   build:
@@ -26,7 +26,6 @@ jobs:
         with:
           submodules: recursive
 
-      # CRITICAL: Convert repository name to lowercase for Docker compatibility
       - name: 1.1. Prepare Repository Name
         run: |
           echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
@@ -47,7 +46,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 5. Build and Push Environment Image
-        # Save build environment to GHCR to avoid repetitive dependency installation
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -59,18 +57,19 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: 6-1. Restore ccache
-        # Persist compilation cache to overcome 6-hour GitHub Actions timeout
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: scummvm-ccache-${{ github.ref }}-${{ github.sha }}-v2
+          # Using run_id ensures we never hit the "0MB immutability" trap
+          key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}
           restore-keys: |
             scummvm-ccache-${{ github.ref }}-
             scummvm-ccache-
 
       - name: 7. Execution Logic (Build & Package)
+        # CRITICAL: Stop at 340m to allow 20m for cache upload before 6h SIGKILL
+        timeout-minutes: 340 
         run: |
-          # Function to handle patching and multi-core compilation
           run_build() {
             local label=$1
             local mode=$2
@@ -85,19 +84,15 @@ jobs:
               -e CCACHE_DIR=/root/.ccache \
               ghcr.io/${{ env.REPO_LOWER }}/scummvm-builder:latest /bin/bash -c "
                 cd /work
-                # Use cached source if exists, otherwise clone
                 [ -d src ] || git clone -b branch-2026-1-0 --recurse-submodules https://github.com/scummvm/scummvm.git src
                 cd src
                 
-                # Clean source state to prevent patch conflicts
                 git reset --hard
                 find . -type f -name '*.[ch]*' | xargs sed -i 's/\r$//'
 
-                # [Patch Group 1] Mandatory (000-cacert for SSL/Networking)
                 echo 'Applying mandatory patch 000...'
                 git apply ../patches/scummvm-000-cacert-env.patch || true
 
-                # [Patch Group 2] Korean Engines (001, 002, 003)
                 if [ \"$mode\" == \"full\" ]; then
                   echo 'Applying Korean patches 001, 002, 003...'
                   git apply ../patches/scummvm-001-british-korean.patch || true
@@ -105,16 +100,13 @@ jobs:
                   git apply ../patches/scummvm-003-sci-add-korean.patch || true
                 fi
 
-                # Configure with optimizations and ccache enabled
                 ./configure --backend=sdl --enable-optimizations --opengl-mode=gles2 \
                   --enable-vkeybd --disable-debug --enable-release --enable-fluidsynth \
                   --enable-all-engines
                 
-                # Use all available CPU cores for compilation
                 make -j$(nproc)
                 strip scummvm
 
-                # Create spruceOS compatible directory structure
                 mkdir -p ../${out_dir}/LICENSES ../${out_dir}/Theme ../${out_dir}/Extra/shaders ../${out_dir}/libs
                 cp -f scummvm ../${out_dir}/
                 cp -f LICENSES/* ../${out_dir}/LICENSES/
@@ -124,10 +116,8 @@ jobs:
                 cp -f backends/vkeybd/packs/*.zip ../${out_dir}/Extra/
                 cp -f dists/soundfonts/Roland_SC-55.sf2 ../${out_dir}/Extra/
                 
-                # Collect GLSL shaders
                 find engines/ -type f \( -name '*.fragment' -o -name '*.vertex' \) -exec cp -f {} ../${out_dir}/Extra/shaders/ \;
 
-                # Automatic shared library extraction for portable runtime
                 for lib in \$(readelf -d ../${out_dir}/scummvm | grep NEEDED | awk -F'[' '{print \$2}' | awk -F']' '{print \$1}'); do
                   LIB_PATH=\$(find /usr/lib/aarch64-linux-gnu /usr/lib -name \"\$lib\" -print -quit)
                   [ -n \"\$LIB_PATH\" ] && cp -L \"\$LIB_PATH\" \"../${out_dir}/libs/\"
@@ -135,24 +125,23 @@ jobs:
               "
           }
 
-          # Execute builds based on user input
           TYPE="${{ github.event.inputs.build_type }}"
           if [ "$TYPE" == "standard" ] || [ "$TYPE" == "both" ]; then
             run_build "Standard" "basic"
           fi
           if [ "$TYPE" == "korean" ] || [ "$TYPE" == "both" ]; then
-            # Second build is extremely fast due to ccache
             run_build "Korean" "full"
           fi
 
-      - name: 6-2. Save ccache
-        if: always() 
+      - name: 8. Save ccache (Force Save)
+        # This step runs even if Step 7 times out, ensuring progress is kept
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: .ccache
-          key: scummvm-ccache-${{ github.ref }}-${{ github.sha }}-v2
+          key: scummvm-ccache-${{ github.ref }}-${{ github.run_id }}
 
-      - name: 8. Create Final Archives (7-Zip)
+      - name: 9. Create Final Archives (7-Zip)
         run: |
           sudo apt-get install -y p7zip-full
           if [ -d "OUT_DIR_Standard" ]; then
@@ -162,7 +151,7 @@ jobs:
             7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_korean.7z ./OUT_DIR_Korean/*
           fi
 
-      - name: 9. Upload to GitHub Release
+      - name: 10. Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
