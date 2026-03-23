@@ -67,6 +67,7 @@ jobs:
           restore-keys: |
             scummvm-ccache-${{ github.ref }}-
             scummvm-ccache-
+          save-always: true
 
       - name: 7. Execution Logic (Build & Package)
         run: |
