@@ -80,6 +80,7 @@ jobs:
 
             docker run --rm \
               -v ${{ github.workspace }}:/work \
+              --platform linux/arm64 \
               -v ${{ github.workspace }}/.ccache:/root/.ccache \
               -e CCACHE_DIR=/root/.ccache \
               ghcr.io/${{ env.REPO_LOWER }}/scummvm-builder:latest /bin/bash -c "
