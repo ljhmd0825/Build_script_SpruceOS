@@ -1,0 +1,21 @@
+diff --git a/src/sound/psx.c b/src/sound/psx.c
+index aa887e22..d8dec4a1 100644
+--- a/src/sound/psx.c
++++ b/src/sound/psx.c
+@@ -336,14 +336,14 @@ static void *psxspu_start(int sndindex, int clock, const void *config)
+ 	state_save_register_item_array( "psx", sndindex, chip->m_p_n_adsrvolume );
+ 	state_save_register_item_array( "psx", sndindex, chip->m_p_n_repeataddress );
+ 	state_save_register_item_array( "psx", sndindex, chip->m_p_n_effect );
+-	state_save_register_item_array( "psx", sndindex, chip->m_p_n_spuram );
++	state_save_register_memory( "psx", sndindex, "m_p_n_spuram", (UINT8 *)chip->m_p_n_spuram, 2, SPU_RAM_SIZE / 2 );
+ 	state_save_register_item_array( "psx", sndindex, chip->m_p_n_blockaddress );
+ 	state_save_register_item_array( "psx", sndindex, chip->m_p_n_blockoffset );
+ 	state_save_register_item_array( "psx", sndindex, chip->m_p_n_blockstatus );
+ 	state_save_register_item_array( "psx", sndindex, chip->m_p_n_blockbuffer );
+ 	state_save_register_item_array( "psx", sndindex, chip->m_p_n_s1 );
+ 	state_save_register_item_array( "psx", sndindex, chip->m_p_n_s2 );
+-	state_save_register_item_array( "psx", sndindex, chip->m_n_loop );
++	state_save_register_memory( "psx", sndindex, "m_n_loop", (UINT8 *)chip->m_n_loop, 4, MAX_CHANNEL );
+ 
+ 	chip->intf->spu_install_read_handler( 4, spu_read );
+ 	chip->intf->spu_install_write_handler( 4, spu_write );
