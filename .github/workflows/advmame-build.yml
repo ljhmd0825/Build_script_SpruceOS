@@ -44,15 +44,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 5-1. Restore ccache using dynamic keys
       - name: 5-1. Restore ccache
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: advmame-ccache-${{ github.sha }}-v3
+          # Unique key for this specific run to avoid "already exists" error during save
+          key: advmame-ccache-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # Fallback to the most recent cache if the exact key isn't found
           restore-keys: |
+            advmame-ccache-${{ github.ref }}-
             advmame-ccache-
 
-      - name: 6. Execution Logic (Build & Package)
+      - name: 6. Execution Logic (Build Phase)
         run: |
           run_advmame_build() {
             local label=$1
@@ -80,7 +84,7 @@ jobs:
                 git reset --hard
                 [ -n \"$target_hash\" ] && git checkout \"$target_hash\" || git pull origin master
                 
-                # [Manual Build Infrastructure Setup] - 순서 엄수
+                # [Manual Build Infrastructure Setup]
                 echo 'Preparing build environment...'
                 mkdir -p m4
                 touch NEWS README AUTHORS ChangeLog
@@ -101,7 +105,6 @@ jobs:
 
                 # [Configure & Build]
                 ./configure
-                
                 make -j$(nproc) TARGET=mame
                 
                 # Organize Output
@@ -118,12 +121,14 @@ jobs:
             run_advmame_build "PSX_Fix" "true"
           fi
 
+      # 5-2. Save ccache immediately after build
       - name: 5-2. Save ccache
+        # "always()" ensures progress is saved even if subsequent packaging steps fail
         if: always()
         uses: actions/cache/save@v4
         with:
           path: .ccache
-          key: advmame-ccache-${{ github.sha }}-v3
+          key: advmame-ccache-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: 7. Create Final Archives
         run: |
