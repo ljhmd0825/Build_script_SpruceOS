@@ -93,15 +93,31 @@ jobs:
               
               ccache -s
               
-              mkdir -p ../ADV_OUT
-              cp obj/mame/linux/blend/advmame ../ADV_OUT/advmame_AARCH64
+              OUT_PATH="../ADV_OUT"
+              mkdir -p $OUT_PATH/bin $OUT_PATH/support $OUT_PATH/libs
               
-              cd ../ADV_OUT
-              7z a -t7z -mx=9 ../advmame_AARCH64.7z ./*
+              cp obj/mame/linux/blend/advmame $OUT_PATH/bin/advmame_AARCH64
+              [ -f obj/j/linux/blend/advj ] && cp obj/j/linux/blend/advj $OUT_PATH/bin/advj_AARCH64
               
-              chown -R 1001:127 /root/.ccache || true
+              for dat_file in event.dat hiscore.dat history.dat cheat.dat; do
+                [ -f \"support/$dat_file\" ] && cp \"support/$dat_file\" $OUT_PATH/support/
+              done
+              
+              TARGET_BIN=\"$OUT_PATH/bin/advmame_AARCH64\"
+              for lib in \$(readelf -d \$TARGET_BIN | grep NEEDED | awk -F'[' '{print \$2}' | awk -F']' '{print \$1}'); do
+                LIB_PATH=\$(find /usr/lib/aarch64-linux-gnu /usr/lib -name \"\$lib\" -print -quit)
+                [ -n \"\$LIB_PATH\" ] && cp -L \"\$LIB_PATH\" \"$OUT_PATH/libs/\$lib\"
+              done
+
+              aarch64-linux-gnu-strip $OUT_PATH/bin/*
+              aarch64-linux-gnu-strip $OUT_PATH/libs/* || true
+
+              cd $OUT_PATH
+              7z a -t7z -mx=9 ../advmame_package_AARCH64.7z ./*
+              
               cd /work
-              chown 1001:127 advmame_AARCH64.7z
+              chown -R 1001:127 /root/.ccache || true
+              chown 1001:127 advmame_package_AARCH64.7z
             "
 
       - name: Save ccache
@@ -117,7 +133,7 @@ jobs:
         with:
           tag_name: "advmame-${{ env.BUILD_DATE }}-${{ github.run_number }}"
           name: "AdvanceMAME Build ${{ env.BUILD_DATE }} (#${{ github.run_number }})"
-          files: "advmame_AARCH64.7z"
+          files: "advmame_package_AARCH64.7z"
           append_body: true
           make_latest: true
         env:
