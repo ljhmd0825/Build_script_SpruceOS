@@ -46,6 +46,8 @@ jobs:
       - name: 6. Execution Build Phase
         timeout-minutes: 300 
         run: |
+          mkdir -p .ccache
+          chmod -R 777 .ccache
           target_hash="${{ github.event.inputs.commit_hash }}"
           
           docker run --rm \
@@ -53,10 +55,13 @@ jobs:
             -v ${{ github.workspace }}:/work \
             -v ${{ github.workspace }}/.ccache:/root/.ccache \
             -e CCACHE_DIR=/root/.ccache \
+            -e CCACHE_COMPILERCHECK=content \
             ghcr.io/${{ env.REPO_LOWER }}/scummvm-builder:latest /bin/bash -c "
               cd /work
               apt-get update && apt-get install -y --no-install-recommends \
-                libexpat1-dev libasound2-dev libslang2-dev libncurses5-dev libncursesw5-dev
+                libexpat1-dev libasound2-dev libslang2-dev libncurses5-dev libncursesw5-dev ccache
+              
+              export PATH='/usr/lib/ccache:$PATH'
               
               [ -d advmame ] || git clone https://github.com/amadvance/advancemame.git advmame
               cd advmame
@@ -66,18 +71,23 @@ jobs:
               
               mkdir -p m4
               touch NEWS README AUTHORS ChangeLog
-              aclocal -I m4
-              automake --add-missing --copy --foreign || true
-              autoheader
-              autoconf
+              aclocal -I m4 && automake --add-missing --copy --foreign || true
+              autoheader && autoconf
               
               git apply ../patches/iremga20_fix.patch || true
 
+              ccache -M 5G
+              ccache -z
+
               ./configure
-              make -j$(nproc) TARGET=mame
+              make -j$(nproc) TARGET=mame CC='ccache gcc' CXX='ccache g++'
+              
+              ccache -s
               
               mkdir -p ../ADV_OUT
               cp obj/mame/linux/blend/advmame ../ADV_OUT/advmame_AARCH64
+              
+              chown -R 1001:127 /root/.ccache || true
             "
 
       - name: 7. Save ccache (Always)
