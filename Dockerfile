@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     libsdl2-net-dev libfribidi-dev libglew-dev libtheora-dev libcurl4-openssl-dev \
     libmpeg2-4-dev libgif-dev libreadline-dev libexpat1-dev libasound2-dev \
     libslang2-dev libncurses5-dev libncursesw5-dev && \
-  # Special handling for magics++ to avoid dependency breaks
+  # magics++
     apt-get install -y --no-install-recommends libmagics++-dev && \
 # 2. Build Custom SDL 2.26.2 (As per your requirement)
     rm -f /usr/lib/aarch64-linux-gnu/libSDL2.* && \
