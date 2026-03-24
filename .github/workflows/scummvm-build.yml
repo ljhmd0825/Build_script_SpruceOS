@@ -74,6 +74,7 @@ jobs:
             local label=$1
             local mode=$2
             local out_dir="OUT_DIR_${label}"
+            local archive_name="scummvm_AARCH64_${label,,}.7z"
             docker run --rm \
               --platform linux/arm64 \
               -v ${{ github.workspace }}:/work \
@@ -93,16 +94,12 @@ jobs:
                   git apply ../patches/scummvm-002-ultima8-korean.patch || true
                   git apply ../patches/scummvm-003-sci-add-korean.patch || true
                 fi
-
                 ccache -M 5G
                 ccache -z
-
                 ./configure --backend=sdl --enable-optimizations --opengl-mode=gles2 \
                   --enable-vkeybd --disable-debug --enable-release --enable-fluidsynth \
                   --enable-all-engines
-                
                 make -j$(nproc) CC='ccache gcc' CXX='ccache g++'
-                
                 ccache -s
                 strip scummvm
                 mkdir -p ../${out_dir}/LICENSES ../${out_dir}/Theme ../${out_dir}/Extra/shaders ../${out_dir}/libs
@@ -118,8 +115,11 @@ jobs:
                   LIB_PATH=\$(find /usr/lib/aarch64-linux-gnu /usr/lib -name \"\$lib\" -print -quit)
                   [ -n \"\$LIB_PATH\" ] && cp -L \"\$LIB_PATH\" \"../${out_dir}/libs/\"
                 done
+                cd /work
+                7z a -t7z -m0=lzma2 -mx=9 ${archive_name} ./${out_dir}/*
                 sync
                 chown -R 1001:127 /root/.ccache || true
+                chown 1001:127 ${archive_name}
               "
           }
           TYPE="${{ github.event.inputs.build_type }}"
@@ -143,24 +143,12 @@ jobs:
           path: .ccache
           key: scummvm-ccache-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: 9. Create Final Archives
-        run: |
-          sudo apt-get install -y p7zip-full
-          if [ -d "OUT_DIR_Standard" ]; then
-            7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_standard.7z ./OUT_DIR_Standard/*
-          fi
-          if [ -d "OUT_DIR_Korean" ]; then
-            7z a -t7z -m0=lzma2 -mx=9 scummvm_AARCH64_korean.7z ./OUT_DIR_Korean/*
-          fi
-
       - name: 10. Create GitHub Release
         if: always()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "v${{ github.run_id }}-${{ github.run_attempt }}"
           name: "ScummVM Build - ${{ github.run_id }}"
-          files: |
-            scummvm_AARCH64_standard.7z
-            scummvm_AARCH64_korean.7z
+          files: "*.7z"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
