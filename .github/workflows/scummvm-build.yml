@@ -44,7 +44,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 5. Build and Push Environment Image
+      - name: 5. Build and Push Environment Image (Only if Dockerfile changed)
         uses: docker/build-push-action@v5
         with:
           context: .
