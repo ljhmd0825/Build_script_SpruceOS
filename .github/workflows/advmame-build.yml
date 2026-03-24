@@ -58,10 +58,8 @@ jobs:
             -e CCACHE_COMPILERCHECK=content \
             ghcr.io/${{ env.REPO_LOWER }}/scummvm-builder:latest /bin/bash -c "
               cd /work
-              apt-get update && apt-get install -y --no-install-recommends \
-                libexpat1-dev libasound2-dev libslang2-dev libncurses5-dev libncursesw5-dev ccache
               
-              export PATH='/usr/lib/ccache:$PATH'
+              # No apt-get install needed (Already in Docker Image)
               
               [ -d advmame ] || git clone https://github.com/amadvance/advancemame.git advmame
               cd advmame
