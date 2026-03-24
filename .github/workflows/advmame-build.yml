@@ -4,18 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       commit_hash:
-        description: 'Target Commit Hash (Leave empty for latest)'
+        description: 'Target Commit Hash'
         required: false
         default: ''
-      build_type:
-        description: 'Select Build Type'
-        required: true
-        default: 'both'
-        type: choice
-        options:
-          - 'standard'    # iremga20_fix ONLY
-          - 'psx_fix'     # iremga20_fix + psx_sound_fix
-          - 'both'        # Build both versions
 
 jobs:
   build:
@@ -29,8 +20,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 2. Set Lowercase Repository Name
-        run: |
-          echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+        run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
       - name: 3. Set up QEMU for ARM64
         uses: docker/setup-qemu-action@v3
@@ -44,110 +34,71 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 5-1. Restore ccache using dynamic keys
-      - name: 5-1. Restore ccache
+      - name: 5. Restore ccache
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          # Unique key for this specific run to avoid "already exists" error during save
           key: advmame-ccache-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
-          # Fallback to the most recent cache if the exact key isn't found
           restore-keys: |
             advmame-ccache-${{ github.ref }}-
             advmame-ccache-
 
-      - name: 6. Execution Logic (Build Phase)
+      - name: 6. Execution Build Phase
+        timeout-minutes: 300 
         run: |
-          run_advmame_build() {
-            local label=$1
-            local apply_psx=$2
-            local target_hash="${{ github.event.inputs.commit_hash }}"
-            local out_dir="ADV_OUT_${label}"
-            
-            echo "------------------------------------------------------"
-            echo "Starting AdvanceMAME build for: ${label}"
-            echo "------------------------------------------------------"
+          target_hash="${{ github.event.inputs.commit_hash }}"
+          
+          docker run --rm \
+            --platform linux/arm64 \
+            -v ${{ github.workspace }}:/work \
+            -v ${{ github.workspace }}/.ccache:/root/.ccache \
+            -e CCACHE_DIR=/root/.ccache \
+            ghcr.io/${{ env.REPO_LOWER }}/scummvm-builder:latest /bin/bash -c "
+              cd /work
+              apt-get update && apt-get install -y --no-install-recommends \
+                libexpat1-dev libasound2-dev libslang2-dev libncurses5-dev libncursesw5-dev
+              
+              [ -d advmame ] || git clone https://github.com/amadvance/advancemame.git advmame
+              cd advmame
+              
+              git reset --hard
+              [ -n \"$target_hash\" ] && git checkout \"$target_hash\" || git pull origin master
+              
+              mkdir -p m4
+              touch NEWS README AUTHORS ChangeLog
+              aclocal -I m4
+              automake --add-missing --copy --foreign || true
+              autoheader
+              autoconf
+              
+              git apply ../patches/iremga20_fix.patch || true
 
-            docker run --rm \
-              --platform linux/arm64 \
-              -v ${{ github.workspace }}:/work \
-              -v ${{ github.workspace }}/.ccache:/root/.ccache \
-              -e CCACHE_DIR=/root/.ccache \
-              ghcr.io/${{ env.REPO_LOWER }}/scummvm-builder:latest /bin/bash -c "
-                cd /work
-                apt-get update && apt-get install -y --no-install-recommends \
-                  libexpat1-dev libasound2-dev libslang2-dev libncurses5-dev libncursesw5-dev
-                [ -d advmame ] || git clone https://github.com/amadvance/advancemame.git advmame
-                cd advmame
-                
-                # Clean and Checkout
-                git reset --hard
-                [ -n \"$target_hash\" ] && git checkout \"$target_hash\" || git pull origin master
-                
-                # [Manual Build Infrastructure Setup]
-                echo 'Preparing build environment...'
-                mkdir -p m4
-                touch NEWS README AUTHORS ChangeLog
-                
-                aclocal -I m4
-                automake --add-missing --copy --foreign || true
-                autoheader
-                autoconf
-                
-                # [Patches]
-                echo 'Applying mandatory iremga20_fix.patch...'
-                git apply ../patches/iremga20_fix.patch || true
+              ./configure
+              make -j$(nproc) TARGET=mame
+              
+              mkdir -p ../ADV_OUT
+              cp obj/mame/linux/blend/advmame ../ADV_OUT/advmame_AARCH64
+            "
 
-                if [ \"$apply_psx\" == \"true\" ]; then
-                  echo 'Applying optional psx_sound_fix.patch...'
-                  git apply ../patches/psx_sound_fix.patch || true
-                fi
-
-                # [Configure & Build]
-                ./configure
-                make -j$(nproc) TARGET=mame
-                
-                # Organize Output
-                mkdir -p ../${out_dir}
-                cp obj/mame/linux/blend/advmame ../${out_dir}/advmame_${label}
-              "
-          }
-
-          TYPE="${{ github.event.inputs.build_type }}"
-          if [ "$TYPE" == "standard" ] || [ "$TYPE" == "both" ]; then
-            run_advmame_build "Standard" "false"
-          fi
-          if [ "$TYPE" == "psx_fix" ] || [ "$TYPE" == "both" ]; then
-            run_advmame_build "PSX_Fix" "true"
-          fi
-
-      # 5-2. Save ccache immediately after build
-      - name: 5-2. Save ccache
-        # "always()" ensures progress is saved even if subsequent packaging steps fail
+      - name: 7. Save ccache (Always)
         if: always()
         uses: actions/cache/save@v4
         with:
           path: .ccache
           key: advmame-ccache-${{ github.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: 7. Create Final Archives
+      - name: 8. Archive & Upload
+        if: success()
         run: |
           sudo apt-get install -y p7zip-full
-          [ -d "ADV_OUT_Standard" ] && 7z a -t7z -mx=9 advmame_AARCH64_standard.7z ./ADV_OUT_Standard/* || true
-          [ -d "ADV_OUT_PSX_Fix" ] && 7z a -t7z -mx=9 advmame_AARCH64_psx_fix.7z ./ADV_OUT_PSX_Fix/* || true
-
-      - name: 8. Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: advmame-aarch64-builds
-          path: "*.7z"
-
+          7z a -t7z -mx=9 advmame_AARCH64.7z ./ADV_OUT/*
+          
       - name: 9. Create GitHub Release
         uses: softprops/action-gh-release@v2
-        if: always()
+        if: success()
         with:
           files: "*.7z"
-          tag_name: "build-${{ github.run_id }}-${{ github.run_attempt }}"
-          name: "AdvanceMAME Build - ${{ github.run_id }}"
+          tag_name: "v${{ github.run_id }}-${{ github.run_attempt }}"
+          name: "AdvanceMAME AARCH64 Build"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
