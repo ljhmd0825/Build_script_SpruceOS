@@ -26,8 +26,10 @@ jobs:
         with:
           submodules: recursive
 
-      - name: 1.1. Prepare Repository Name
-        run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+      - name: 1.1. Prepare Environment Variables
+        run: |
+          echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
 
       - name: 2. Set up QEMU for ARM64
         uses: docker/setup-qemu-action@v3
@@ -44,7 +46,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 5. Build and Push Environment Image (Only if Dockerfile changed)
+      - name: 5. Build and Push Environment Image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -97,11 +99,11 @@ jobs:
                   git apply ../patches/scummvm-003-sci-add-korean.patch || true
                 fi
                 ccache -M 5G
-                ccache -s
+                ccache -z
                 ./configure --backend=sdl --enable-optimizations --opengl-mode=gles2 \
                   --enable-vkeybd --disable-debug --enable-release --enable-fluidsynth \
                   --enable-all-engines
-                make -j$(nproc) CC='ccache gcc' CXX='ccache g++'
+                make -j$(nproc) V=1 CC='ccache gcc' CXX='ccache g++'
                 ccache -s
                 strip scummvm
                 mkdir -p ../${out_dir}/LICENSES ../${out_dir}/Theme ../${out_dir}/Extra/shaders ../${out_dir}/libs
@@ -119,7 +121,6 @@ jobs:
                 done
                 cd /work
                 7z a -t7z -m0=lzma2 -mx=9 ${archive_name} ./${out_dir}/*
-                sync
                 chown -R 1001:127 /root/.ccache || true
                 chown 1001:127 ${archive_name}
               "
@@ -132,13 +133,12 @@ jobs:
             run_build "Korean" "full"
           fi
 
-      - name: 8-1. Fix Permissions
+      - name: 8. Fix Permissions & Save ccache
         if: always()
         run: |
           sudo chown -R $USER:$USER .ccache || true
-          du -sh .ccache || true
-
-      - name: 8-2. Save ccache
+      
+      - name: 9. Save ccache
         if: always()
         uses: actions/cache/save@v4
         with:
@@ -149,8 +149,10 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "v${{ github.run_id }}-${{ github.run_attempt }}"
-          name: "ScummVM Build - ${{ github.run_id }}"
+          tag_name: "scummvm-${{ env.BUILD_DATE }}-${{ github.run_number }}"
+          name: "ScummVM Build ${{ env.BUILD_DATE }} (#${{ github.run_number }})"
           files: "*.7z"
+          append_body: true
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
