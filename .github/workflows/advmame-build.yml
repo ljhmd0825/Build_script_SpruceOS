@@ -93,31 +93,33 @@ jobs:
               
               ccache -s
               
-              OUT_PATH="../ADV_OUT"
-              mkdir -p $OUT_PATH/bin $OUT_PATH/support $OUT_PATH/libs
+              OUT_PATH="/work/ADV_OUT"
+              mkdir -p \$OUT_PATH/bin \$OUT_PATH/support \$OUT_PATH/libs
               
-              cp obj/mame/linux/blend/advmame $OUT_PATH/bin/advmame_AARCH64
-              [ -f obj/j/linux/blend/advj ] && cp obj/j/linux/blend/advj $OUT_PATH/bin/advj_AARCH64
+              [ -f obj/mame/linux/blend/advmame ] && cp obj/mame/linux/blend/advmame \$OUT_PATH/bin/advmame_AARCH64
+              [ -f obj/j/linux/blend/advj ] && cp obj/j/linux/blend/advj \$OUT_PATH/bin/advj_AARCH64
               
               for dat_file in event.dat hiscore.dat history.dat cheat.dat; do
-                [ -f \"support/$dat_file\" ] && cp \"support/$dat_file\" $OUT_PATH/support/
+                [ -f \"support/\$dat_file\" ] && cp \"support/\$dat_file\" \$OUT_PATH/support/
               done
-              
-              TARGET_BIN=\"$OUT_PATH/bin/advmame_AARCH64\"
-              for lib in \$(readelf -d \$TARGET_BIN | grep NEEDED | awk -F'[' '{print \$2}' | awk -F']' '{print \$1}'); do
-                LIB_PATH=\$(find /usr/lib/aarch64-linux-gnu /usr/lib -name \"\$lib\" -print -quit)
-                [ -n \"\$LIB_PATH\" ] && cp -L \"\$LIB_PATH\" \"$OUT_PATH/libs/\$lib\"
-              done
+            
+              TARGET_BIN=\"\$OUT_PATH/bin/advmame_AARCH64\"
+              if [ -f \"\$TARGET_BIN\" ]; then
+                for lib in \$(readelf -d \$TARGET_BIN | grep NEEDED | awk -F'[' '{print \$2}' | awk -F']' '{print \$1}'); do
+                  LIB_PATH=\$(find /usr/lib/aarch64-linux-gnu /usr/lib -name \"\$lib\" -print -quit)
+                  [ -n \"\$LIB_PATH\" ] && cp -L \"\$LIB_PATH\" \"\$OUT_PATH/libs/\$lib\"
+                done
+              fi
 
-              aarch64-linux-gnu-strip $OUT_PATH/bin/*
-              aarch64-linux-gnu-strip $OUT_PATH/libs/* || true
+              aarch64-linux-gnu-strip \$OUT_PATH/bin/advmame_AARCH64 2>/dev/null || true
+              aarch64-linux-gnu-strip \$OUT_PATH/bin/advj_AARCH64 2>/dev/null || true
+              find \$OUT_PATH/libs -type f -name "*.so*" -exec aarch64-linux-gnu-strip {} + 2>/dev/null || true
 
-              cd $OUT_PATH
-              7z a -t7z -mx=9 ../advmame_package_AARCH64.7z ./*
+              cd \$OUT_PATH
+              7z a -t7z -mx=9 /work/advmame_package_AARCH64.7z ./*
               
-              cd /work
               chown -R 1001:127 /root/.ccache || true
-              chown 1001:127 advmame_package_AARCH64.7z
+              chown 1001:127 /work/advmame_package_AARCH64.7z
             "
 
       - name: Save ccache
