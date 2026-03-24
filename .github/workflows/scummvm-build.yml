@@ -80,6 +80,8 @@ jobs:
               -v ${{ github.workspace }}:/work \
               -v ${{ github.workspace }}/.ccache:/root/.ccache \
               -e CCACHE_DIR=/root/.ccache \
+              -e CCACHE_BASEDIR=/work \
+              -e CCACHE_SLOPPINESS=include_file_mtime,content \
               -e CCACHE_COMPILERCHECK=content \
               ghcr.io/${{ env.REPO_LOWER }}/scummvm-builder:latest /bin/bash -c "
                 export PATH='/usr/lib/ccache:$PATH'
@@ -95,7 +97,7 @@ jobs:
                   git apply ../patches/scummvm-003-sci-add-korean.patch || true
                 fi
                 ccache -M 5G
-                ccache -z
+                ccache -s
                 ./configure --backend=sdl --enable-optimizations --opengl-mode=gles2 \
                   --enable-vkeybd --disable-debug --enable-release --enable-fluidsynth \
                   --enable-all-engines
@@ -144,7 +146,7 @@ jobs:
           key: scummvm-ccache-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: 10. Create GitHub Release
-        if: always()
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "v${{ github.run_id }}-${{ github.run_attempt }}"
