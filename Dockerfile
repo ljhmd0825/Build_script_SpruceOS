@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     libmpeg2-4-dev libgif-dev libreadline-dev libexpat1-dev libasound2-dev \
     libslang2-dev libncurses5-dev libncursesw5-dev && \
   # Special handling for magics++ to avoid dependency breaks
-    apt-get install -y --no-install-recommends libmagics++-dev || echo "Warning: magics++ failed, skipping..." && \
+    apt-get install -y --no-install-recommends libmagics++-dev && \
 # 2. Build Custom SDL 2.26.2 (As per your requirement)
     rm -f /usr/lib/aarch64-linux-gnu/libSDL2.* && \
     wget https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.26.2.tar.gz && \
