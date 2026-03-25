@@ -16,6 +16,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 300
     permissions:
       packages: write
       contents: write
@@ -65,6 +66,7 @@ jobs:
           git checkout build-cache -- ccache.tar.gz || true
           if [ -f ccache.tar.gz ]; then
             tar -xzf ccache.tar.gz
+            echo "Successfully restored ccache from branch"
           fi
 
       - name: 7. Build and Extract Logic
@@ -124,16 +126,27 @@ jobs:
         if: always()
         run: |
           sudo chown -R $USER:$USER .ccache
-          tar -czf ccache.tar.gz .ccache
-          git config user.name "github-actions"
-          git config user.email "action@github.com"
-          git fetch origin build-cache:build-cache || git checkout --orphan build-cache
-          git checkout build-cache || git checkout -b build-cache
-          git ls-files | xargs rm -rf || true
-          mv ../ccache.tar.gz ./
-          git add ccache.tar.gz
-          git commit -m "Update ccache: ${{ env.BUILD_DATE }}" || exit 0
-          git push origin build-cache --force
+          if [ -d ".ccache" ]; then
+            # Create archive in a safe location
+            tar -czf /tmp/ccache.tar.gz .ccache
+            
+            git config user.name "github-actions"
+            git config user.email "action@github.com"
+            
+            # Fetch and switch to build-cache branch
+            git fetch origin build-cache:build-cache || git checkout --orphan build-cache
+            git checkout build-cache
+            
+            # Keep only the cache file
+            rm -rf * || true
+            mv /tmp/ccache.tar.gz ./
+            
+            git add ccache.tar.gz
+            git commit -m "Update ccache: ${{ env.BUILD_DATE }} (Run #${{ github.run_number }})" || exit 0
+            git push origin build-cache --force
+          else
+            echo "No ccache directory found to save"
+          fi
 
       - name: 9. Create GitHub Release
         if: success()
