@@ -25,6 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: 1.1. Prepare Environment Variables
         run: |
@@ -46,7 +47,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 5. Build and Push Environment Image
+      - name: 5. Build Environment Image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -57,27 +58,23 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: 6. Restore ccache
-        uses: actions/cache/restore@v4
-        with:
-          path: .ccache
-          key: scummvm-ccache-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            scummvm-ccache-${{ github.workflow }}-
-            scummvm-ccache-
-
-      - name: 7. Execution Logic
-        id: build_main
-        timeout-minutes: 300
+      - name: 6. Restore ccache from Branch
         run: |
           mkdir -p .ccache
+          git fetch origin build-cache:build-cache || true
+          git checkout build-cache -- ccache.tar.gz || true
+          if [ -f ccache.tar.gz ]; then
+            tar -xzf ccache.tar.gz
+          fi
+
+      - name: 7. Build and Extract Logic
+        run: |
+          chmod +x ./extract_scummvm.sh
           chmod -R 777 .ccache
-          run_build() {
+          
+          run_compile() {
             local label=$1
             local mode=$2
-            local out_dir="OUT_DIR_${label}"
-            local archive_name="scummvm_AARCH64_${label,,}_${{ env.BUILD_DATE }}.7z"
-            
             docker run --rm \
               --platform linux/arm64 \
               -v ${{ github.workspace }}:/work \
@@ -90,7 +87,6 @@ jobs:
                 [ -d src ] || git clone -b branch-2026-1-0 --recurse-submodules https://github.com/scummvm/scummvm.git src
                 cd src
                 git reset --hard
-                find . -type f -name '*.[ch]*' | xargs sed -i 's/\r$//'
                 git apply ../patches/scummvm-000-cacert-env.patch || true
                 if [ \"$mode\" == \"full\" ]; then
                   git apply ../patches/scummvm-001-british-korean.patch || true
@@ -98,79 +94,54 @@ jobs:
                   git apply ../patches/scummvm-003-sci-add-korean.patch || true
                 fi
                 ccache -M 5G
-                ccache -z
                 ./configure --backend=sdl --enable-optimizations --opengl-mode=gles2 \
                   --enable-vkeybd --disable-debug --enable-release --enable-fluidsynth \
                   --enable-all-engines
-                make -j\$(nproc) V=1 CC='ccache gcc' CXX='ccache g++'
-                ccache -s
+                make -j\$(nproc) CC='ccache gcc' CXX='ccache g++'
                 strip scummvm
-                
-                mkdir -p ../${out_dir}/LICENSES ../${out_dir}/Theme ../${out_dir}/Extra/shaders ../${out_dir}/libs
-                cp -f scummvm ../${out_dir}/
-                cp -f LICENSES/* ../${out_dir}/LICENSES/
-                cp -f gui/themes/*.dat gui/themes/*.zip ../${out_dir}/Theme/
-                cp -f dists/networking/wwwroot.zip ../${out_dir}/Theme/
-                cp -f -r dists/engine-data/* ../${out_dir}/Extra/
-                cp -f backends/vkeybd/packs/*.zip ../${out_dir}/Extra/
-                cp -f dists/soundfonts/Roland_SC-55.sf2 ../${out_dir}/Extra/
-                find engines/ -type f \( -name '*.fragment' -o -name '*.vertex' \) -exec cp -f {} ../${out_dir}/Extra/shaders/ \;
-
-                LIBS=(
-                  \"liba52-0.7.4.so\" \"libasn1.so.8\" \"libasound.so.2\" \"libbrotlicommon.so.1\"
-                  \"libbrotlidec.so.1\" \"libbsd.so.0\" \"libcom_err.so.2\" \"libcrypt.so.1\"
-                  \"libcrypto.so.1.1\" \"libcurl.so.4\" \"libcurl-gnutls.so.4\" \"libfaad.so.2\"
-                  \"libffi.so.7\" \"libFLAC.so.8\" \"libfluidsynth.so.3\" \"libfreetype.so.6\"
-                  \"libfribidi.so.0\" \"libgif.so.7\" \"libgmp.so.10\" \"libgnutls.so.30\"
-                  \"libgssapi.so.3\" \"libgssapi_krb5.so.2\" \"libhcrypto.so.4\" \"libheimbase.so.1\"
-                  \"libheimntlm.so.0\" \"libhogweed.so.5\" \"libhx509.so.5\" \"libidn2.so.0\"
-                  \"libk5crypto.so.3\" \"libkeyutils.so.1\" \"libkrb5.so.3\" \"libkrb5.so.26\"
-                  \"libkrb5support.so.0\" \"liblber-2.4.so.2\" \"libldap_r-2.4.so.2\" \"liblzma.so.5\"
-                  \"libmikmod.so.3\" \"libmpeg2.so.0\" \"libnettle.so.7\" \"libnghttp2.so.14\"
-                  \"libp11-kit.so.0\" \"libpng16.so.16\" \"libpsl.so.5\" \"libroken.so.18\"
-                  \"librtmp.so.1\" \"libsasl2.so.2\" \"libsndio.so.7.0\" \"libspeechd.so.2\"
-                  \"libsqlite3.so.0\" \"libssh.so.4\" \"libssl.so.1.1\" \"libtasn1.so.6\"
-                  \"libunistring.so.2\" \"libwind.so.0\" \"libz.so.1\"
-                )
-                
-                for LIB_NAME in \"\${LIBS[@]}\"; do
-                  LIB_PATH=\$(find /usr/lib/aarch64-linux-gnu /usr/lib -name \"\$LIB_NAME\" -print -quit)
-                  [ -n \"\$LIB_PATH\" ] && cp -L \"\$LIB_PATH\" \"../${out_dir}/libs/\$LIB_NAME\"
-                done
-
-                cd /work
-                7z a -t7z -m0=lzma2 -mx=9 ${archive_name} ./${out_dir}/*
-                chown -R 1001:127 /root/.ccache || true
-                chown 1001:127 ${archive_name}
               "
           }
+
+          run_extract() {
+            local label=$1
+            docker run --rm \
+              --platform linux/arm64 \
+              -v ${{ github.workspace }}:/work \
+              ghcr.io/${{ env.REPO_LOWER }}/scummvm-builder:latest /bin/bash /work/extract_scummvm.sh "$label" "${{ env.BUILD_DATE }}"
+          }
+
           TYPE="${{ github.event.inputs.build_type }}"
           if [ "$TYPE" == "standard" ] || [ "$TYPE" == "both" ]; then
-            run_build "Standard" "basic"
+            run_compile "Standard" "basic"
+            run_extract "Standard"
           fi
           if [ "$TYPE" == "korean" ] || [ "$TYPE" == "both" ]; then
-            run_build "Korean" "full"
+            run_compile "Korean" "full"
+            run_extract "Korean"
           fi
 
-      - name: 8. Fix Permissions
+      - name: 8. Save ccache to Branch
         if: always()
-        run: sudo chown -R $USER:$USER .ccache || true
-      
-      - name: 9. Save ccache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: .ccache
-          key: scummvm-ccache-${{ github.workflow }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          sudo chown -R $USER:$USER .ccache
+          tar -czf ccache.tar.gz .ccache
+          git config user.name "github-actions"
+          git config user.email "action@github.com"
+          git fetch origin build-cache:build-cache || git checkout --orphan build-cache
+          git checkout build-cache || git checkout -b build-cache
+          git ls-files | xargs rm -rf || true
+          mv ../ccache.tar.gz ./
+          git add ccache.tar.gz
+          git commit -m "Update ccache: ${{ env.BUILD_DATE }}" || exit 0
+          git push origin build-cache --force
 
-      - name: 10. Create GitHub Release
+      - name: 9. Create GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "scummvm-${{ env.BUILD_DATE }}-${{ github.run_number }}"
           name: "ScummVM Build ${{ env.BUILD_DATE }} (#${{ github.run_number }})"
           files: "*.7z"
-          append_body: true
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
