@@ -127,26 +127,34 @@ jobs:
         run: |
           sudo chown -R $USER:$USER .ccache
           if [ -d ".ccache" ]; then
-            # Create archive in a safe location
+            # 1. Archive to temporary location
             tar -czf /tmp/ccache.tar.gz .ccache
             
+            # 2. Setup Git Identity
             git config user.name "github-actions"
             git config user.email "action@github.com"
             
-            # Fetch and switch to build-cache branch
-            git fetch origin build-cache:build-cache || git checkout --orphan build-cache
-            git checkout build-cache
+            # 3. Clean current workspace to prevent checkout conflicts
+            git reset --hard HEAD
+            git clean -fd
             
-            # Keep only the cache file
+            # 4. Fetch and Force Checkout
+            git fetch origin build-cache:build-cache || true
+            git checkout -f build-cache || git checkout --orphan build-cache
+            
+            # 5. Purge all files in branch to keep it only for ccache
+            git rm -rf . || true
             rm -rf * || true
-            mv /tmp/ccache.tar.gz ./
             
+            # 6. Restore archive and Push
+            mv /tmp/ccache.tar.gz ./
             git add ccache.tar.gz
             git commit -m "Update ccache: ${{ env.BUILD_DATE }} (Run #${{ github.run_number }})" || exit 0
             git push origin build-cache --force
           else
-            echo "No ccache directory found to save"
+            echo "No ccache directory found"
           fi
+            
 
       - name: 9. Create GitHub Release
         if: success()
