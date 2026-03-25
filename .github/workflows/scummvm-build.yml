@@ -127,32 +127,34 @@ jobs:
         run: |
           sudo chown -R $USER:$USER .ccache
           if [ -d ".ccache" ]; then
-            # 1. Archive to temporary location
-            tar -czf /tmp/ccache.tar.gz .ccache
+            # Create the archive inside workspace
+            tar -czf ccache.tar.gz .ccache
             
-            # 2. Setup Git Identity
+            # Use a separate temporary directory for pushing to avoid checkout conflicts
+            mkdir -p /tmp/cache-repo
+            cd /tmp/cache-repo
+            git init
             git config user.name "github-actions"
             git config user.email "action@github.com"
             
-            # 3. Clean current workspace to prevent checkout conflicts
-            git reset --hard HEAD
-            git clean -fd
+            # Fetch and push to the build-cache branch
+            git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+            git fetch origin build-cache || true
             
-            # 4. Fetch and Force Checkout
-            git fetch origin build-cache:build-cache || true
-            git checkout -f build-cache || git checkout --orphan build-cache
+            # Attempt to checkout the branch or create an orphan
+            if git checkout build-cache; then
+               git rm -rf . || true
+            else
+               git checkout --orphan build-cache
+            fi
             
-            # 5. Purge all files in branch to keep it only for ccache
-            git rm -rf . || true
-            rm -rf * || true
-            
-            # 6. Restore archive and Push
-            mv /tmp/ccache.tar.gz ./
+            # Bring the archive and push
+            mv ${{ github.workspace }}/ccache.tar.gz ./
             git add ccache.tar.gz
             git commit -m "Update ccache: ${{ env.BUILD_DATE }} (Run #${{ github.run_number }})" || exit 0
             git push origin build-cache --force
           else
-            echo "No ccache directory found"
+            echo "No ccache folder to save."
           fi
             
 
