@@ -13,9 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     libboost-thread-dev libboost-all-dev pkg-config zlib1g-dev clang cmake cmake-data \
     libarchive13 libcurl4 libfreetype6-dev librhash0 libuv1 mercurial mercurial-common \
     libgbm-dev liba52-0.7.4-dev libjpeg-turbo8-dev libspeechd-dev libfaad-dev \
+    libvorbis-dev libmad0-dev libflac-dev libmikmod-dev libpng-dev \
     libsdl2-net-dev libfribidi-dev libglew-dev libtheora-dev libcurl4-openssl-dev \
-    libmpeg2-4-dev libgif-dev libreadline-dev libexpat1-dev libasound2-dev \
-    libslang2-dev libncurses5-dev libncursesw5-dev p7zip-full && \
+    libogg-dev libmpeg2-4-dev libgif-dev libreadline-dev libexpat1-dev libasound2-dev \
+    libtiff-dev libslang2-dev libncurses5-dev libncursesw5-dev p7zip-full && \
 # magics++
     apt-get install -y --no-install-recommends libmagics++-dev && \
 # 2. Build Custom SDL 2.26.2
