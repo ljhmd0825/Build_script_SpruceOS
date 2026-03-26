@@ -10,8 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     apt-get install -y --no-install-recommends \
     build-essential git wget ccache libdrm-dev python3 python3-pip python3-setuptools python3-wheel \
     ninja-build libopenal-dev premake4 autoconf automake libevdev-dev ffmpeg libboost-tools-dev \
-    libboost-thread-dev libboost-all-dev pkg-config zlib1g-dev libsdl-mixer1.2-dev \
-    libsdl1.2-dev libsdl-gfx1.2-dev libsdl2-mixer-dev clang cmake cmake-data \
+    libboost-thread-dev libboost-all-dev pkg-config zlib1g-dev clang cmake cmake-data \
     libarchive13 libcurl4 libfreetype6-dev librhash0 libuv1 mercurial mercurial-common \
     libgbm-dev libsdl-image1.2-dev liba52-0.7.4-dev libjpeg62-dev libspeechd-dev libfaad-dev \
     libsdl2-net-dev libfribidi-dev libglew-dev libtheora-dev libcurl4-openssl-dev \
