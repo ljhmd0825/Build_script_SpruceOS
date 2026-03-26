@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     ninja-build libopenal-dev premake4 autoconf automake libevdev-dev ffmpeg libboost-tools-dev \
     libboost-thread-dev libboost-all-dev pkg-config zlib1g-dev clang cmake cmake-data \
     libarchive13 libcurl4 libfreetype6-dev librhash0 libuv1 mercurial mercurial-common \
-    libgbm-dev liba52-0.7.4-dev libjpeg62-dev libspeechd-dev libfaad-dev \
+    libgbm-dev liba52-0.7.4-dev libjpeg-turbo8-dev libspeechd-dev libfaad-dev \
     libsdl2-net-dev libfribidi-dev libglew-dev libtheora-dev libcurl4-openssl-dev \
     libmpeg2-4-dev libgif-dev libreadline-dev libexpat1-dev libasound2-dev \
     libslang2-dev libncurses5-dev libncursesw5-dev p7zip-full && \
