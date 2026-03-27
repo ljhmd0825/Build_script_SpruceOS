@@ -93,6 +93,3 @@ COPY patches/ /patches/
 
 WORKDIR /build
 ENTRYPOINT ["/build-64.sh"]
-
-WORKDIR /build
-ENTRYPOINT ["/build-64.sh"]
