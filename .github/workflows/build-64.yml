@@ -6,6 +6,11 @@ on:
       scummvm_version:
         description: 'ScummVM version tag'
         default: 'v2026.1.0'
+      debug_enabled:
+        description: 'Enable step debug logging'
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       scummvm_version:
