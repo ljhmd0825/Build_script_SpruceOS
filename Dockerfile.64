@@ -3,7 +3,6 @@ FROM ubuntu:20.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Configure multiarch for arm64 cross-compilation
-# Ubuntu 20.04 (focal) provides glibc 2.31 — oldest among 64-bit SpruceOS devices
 RUN dpkg --add-architecture arm64 && \
     sed -i 's/^deb http/deb [arch=amd64] http/g' /etc/apt/sources.list && \
     echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports focal main restricted universe multiverse" >> /etc/apt/sources.list && \
@@ -17,12 +16,11 @@ RUN dpkg --add-architecture arm64 && \
     git \
     ca-certificates \
     python3 \
-    python3-pip python3-setuptools python3-wheel \  # [NEW]
-    wget \
-    ccache \
-    cmake \
-    ninja-build autoconf automake premake4 clang \  # [NEW]
-    p7zip-full mercurial libarchive13 libuv1 \      # [NEW]
+    # [NEW] Build tools & Utilities
+    python3-pip python3-setuptools python3-wheel \
+    wget ccache cmake \
+    ninja-build autoconf automake premake4 clang \
+    p7zip-full mercurial libarchive13 libuv1 \
     # --- ARM64 Libraries for ScummVM ---
     libsdl2-dev:arm64 \
     libsdl2-net-dev:arm64 \
@@ -30,30 +28,32 @@ RUN dpkg --add-architecture arm64 && \
     libfreetype6-dev:arm64 \
     libgles2-mesa-dev:arm64 \
     libegl1-mesa-dev:arm64 \
-    libdrm-dev:arm64 libgbm-dev:arm64 libglew-dev:arm64 \ # [NEW]
-    libjpeg-dev:arm64 \
-    libjpeg-turbo8-dev:arm64 \                           # [NEW]
+    # [NEW] Graphics & Display
+    libdrm-dev:arm64 libgbm-dev:arm64 libglew-dev:arm64 \
+    libjpeg-dev:arm64 libjpeg-turbo8-dev:arm64 \
     libgif-dev:arm64 \
     libfribidi-dev:arm64 \
     libtheora-dev:arm64 \
     libmpeg2-4-dev:arm64 \
     libfaad-dev:arm64 \
-    libvpx-dev:arm64 \                                   # [NEW] Added for VP8/VP9 video support
+    # [NEW] Video & Image Formats
+    libvpx-dev:arm64 \
+    libtiff-dev:arm64 \
+    libpng-dev:arm64 \
     liba52-0.7.4-dev:arm64 \
     libcurl4-openssl-dev:arm64 \
     libspeechd-dev:arm64 \
-    libpng-dev:arm64 \
-    libtiff-dev:arm64 \                                  # [NEW]
     zlib1g-dev:arm64 \
     libmad0-dev:arm64 \
     libogg-dev:arm64 \
     libvorbis-dev:arm64 \
     libflac-dev:arm64 \
-    libopenal-dev:arm64 libmikmod-dev:arm64 \            # [NEW]
+    # [NEW] Audio & Input & System
+    libopenal-dev:arm64 libmikmod-dev:arm64 \
     libglib2.0-dev:arm64 \
-    libevdev-dev:arm64 libexpat1-dev:arm64 libreadline-dev:arm64 \ # [NEW]
-    libncurses5-dev:arm64 libncursesw5-dev:arm64 libslang2-dev:arm64 \ # [NEW]
-    libboost-thread-dev:arm64 libboost-all-dev:arm64 \   # [NEW]
+    libevdev-dev:arm64 libexpat1-dev:arm64 libreadline-dev:arm64 \
+    libncurses5-dev:arm64 libncursesw5-dev:arm64 libslang2-dev:arm64 \
+    libboost-thread-dev:arm64 libboost-all-dev:arm64 \
     && rm -rf /var/lib/apt/lists/*
 
 # Create CMake toolchain file for aarch64 cross-compilation
@@ -72,7 +72,7 @@ set(ENV{PKG_CONFIG_PATH} "/usr/lib/aarch64-linux-gnu/pkgconfig")\n\
 set(ENV{PKG_CONFIG_LIBDIR} "/usr/lib/aarch64-linux-gnu/pkgconfig")\n\
 ' > /tmp/aarch64-toolchain.cmake
 
-# Cross-compile FluidSynth 2.3.4 (not in focal repos)
+# Cross-compile FluidSynth 2.3.4
 RUN cd /tmp && \
     git clone --depth 1 --branch v2.3.4 https://github.com/FluidSynth/fluidsynth.git && \
     cd fluidsynth && mkdir build && cd build && \
@@ -90,6 +90,9 @@ RUN cd /tmp && \
 COPY build-64.sh /build-64.sh
 RUN chmod +x /build-64.sh
 COPY patches/ /patches/
+
+WORKDIR /build
+ENTRYPOINT ["/build-64.sh"]
 
 WORKDIR /build
 ENTRYPOINT ["/build-64.sh"]
