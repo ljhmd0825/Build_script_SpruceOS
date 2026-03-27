@@ -64,6 +64,26 @@ set(ENV{PKG_CONFIG_LIBDIR} "/usr/lib/aarch64-linux-gnu/pkgconfig")\n\
 ' > /tmp/aarch64-toolchain.cmake
 
 RUN cd /tmp && \
+    rm -rf /usr/lib/aarch64-linux-gnu/libSDL2* /usr/include/SDL2 && \
+    wget https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.26.2.tar.gz && \
+    tar -xzf release-2.26.2.tar.gz && cd SDL-release-2.26.2 && \
+    CC=aarch64-linux-gnu-gcc \
+    CXX=aarch64-linux-gnu-g++ \
+    PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
+    PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig \
+    ./configure --host=aarch64-linux-gnu \
+                --prefix=/usr \
+                --libdir=/usr/lib/aarch64-linux-gnu \
+                --disable-video-x11 \
+                --disable-pulseaudio \
+                --disable-esd \
+                --enable-video-kmsdrm \
+                --enable-video-opengles \
+                --disable-video-wayland && \
+    make -j$(nproc) && make install && \
+    cd .. && rm -rf SDL-release-2.26.2 release-2.26.2.tar.gz
+
+RUN cd /tmp && \
     git clone --depth 1 --branch v2.3.4 https://github.com/FluidSynth/fluidsynth.git && \
     cd fluidsynth && mkdir build && cd build && \
     cmake -DCMAKE_TOOLCHAIN_FILE=/tmp/aarch64-toolchain.cmake \
@@ -72,7 +92,7 @@ RUN cd /tmp && \
         -Denable-libsndfile=off -Denable-dbus=off \
         -Denable-pulseaudio=off -Denable-jack=off \
         -Denable-pipewire=off -Denable-readline=off \
-        -Denable-sdl2=off \
+        -Denable-sdl2=on \
         .. && \
     make -j$(nproc) && make install && \
     rm -rf /tmp/fluidsynth
