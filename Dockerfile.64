@@ -46,7 +46,6 @@ RUN dpkg --add-architecture arm64 && \
     libglib2.0-dev:arm64 \
     libevdev-dev:arm64 libexpat1-dev:arm64 libreadline-dev:arm64 \
     libncurses5-dev:arm64 libncursesw5-dev:arm64 libslang2-dev:arm64 \
-    libboost-thread-dev:arm64 libboost-all-dev:arm64 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN printf '\
