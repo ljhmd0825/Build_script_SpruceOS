@@ -84,5 +84,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mv output/scummvm output/scummvm.64
-          gh release upload "latest" output/scummvm.64 --clobber
+          if [ -f output/scummvm.64.7z ]; then
+            gh release upload "latest" output/scummvm.64.7z --clobber
+          else
+            echo "Error: output/scummvm.64.7z not found."
+            exit 1
+          fi
