@@ -107,8 +107,21 @@ for lib in "${LIBS[@]}"; do
     fi
 done
 
-cp -d /usr/lib/aarch64-linux-gnu/libvpx.so* "$OUT_DIR/lib/"
-ls -l "$OUT_DIR/lib/libvpx.so*" || true
+SYSROOT=$(aarch64-linux-gnu-gcc -print-sysroot)
+
+if [ -d "$SYSROOT" ] && [ "$SYSROOT" != "/" ]; then
+    echo "=== Searching in Target Sysroot: $SYSROOT ==="
+    find "$SYSROOT" -name "libvpx.so*" -print -exec cp -d {} "$OUT_DIR/lib/" \; 2>/dev/null
+else
+    echo "=== Sysroot not found or root, searching in /usr (Filter: aarch64) ==="
+    find /usr -name "libvpx.so*" | grep "aarch64" | while read -r libpath; do
+        echo "Copying from: $libpath"
+        cp -d "$libpath" "$OUT_DIR/lib/"
+    done
+fi
+
+echo "=== Final Library State in Output === "
+ls -l "$OUT_DIR/lib/libvpx.so*"
 
 cp -f configure_summary.txt config.log config.h config.mk "$OUT_DIR/logs/"
 
