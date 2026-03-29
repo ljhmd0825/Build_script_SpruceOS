@@ -97,7 +97,7 @@ LIBS=(
   "libp11-kit.so.0" "libpng16.so.16" "libpsl.so.5" "libroken.so.18"
   "librtmp.so.1" "libsasl2.so.2" "libsndio.so.7.0" "libspeechd.so.2"
   "libsqlite3.so.0" "libssh.so.4" "libssl.so.1.1" "libtasn1.so.6" "libreadline.so.8"
-  "libunistring.so.2" "libwind.so.0" "libz.so.1" "libvpx.so.7" "libopenmpt.so.0"
+  "libunistring.so.2" "libwind.so.0" "libz.so.1" "libopenmpt.so.0"
 )
 
 for lib in "${LIBS[@]}"; do
@@ -106,6 +106,11 @@ for lib in "${LIBS[@]}"; do
         cp -L "$TARGET" "$OUT_DIR/lib/$lib"
     fi
 done
+
+echo "=== Collecting all libvpx files (Authentic collection) ==="
+
+cp -d /usr/lib/aarch64-linux-gnu/libvpx.so* "$OUT_DIR/lib/"
+ls -l "$OUT_DIR/lib/libvpx.so*"
 
 cp -f configure_summary.txt config.log config.h config.mk "$OUT_DIR/logs/"
 
