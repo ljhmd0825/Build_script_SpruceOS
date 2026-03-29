@@ -107,10 +107,8 @@ for lib in "${LIBS[@]}"; do
     fi
 done
 
-echo "=== Collecting all libvpx files (Authentic collection) ==="
-
 cp -d /usr/lib/aarch64-linux-gnu/libvpx.so* "$OUT_DIR/lib/"
-ls -l "$OUT_DIR/lib/libvpx.so*"
+ls -l "$OUT_DIR/lib/libvpx.so*" || true
 
 cp -f configure_summary.txt config.log config.h config.mk "$OUT_DIR/logs/"
 
