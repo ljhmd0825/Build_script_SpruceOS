@@ -6,6 +6,16 @@ on:
       scummvm_version:
         description: 'ScummVM version tag'
         default: 'v2026.1.0'
+      # --- START OF MODIFICATION: Added Build Type selection ---
+      build_type:
+        description: 'Select build type (64: Standard, 64K: Korean)'
+        required: true
+        default: '64'
+        type: choice
+        options:
+          - '64'
+          - '64K'
+      # --- END OF MODIFICATION ---
       debug_enabled:
         description: 'Enable step debug logging'
         required: false
@@ -16,6 +26,11 @@ on:
       scummvm_version:
         type: string
         default: 'v2026.1.0'
+      # --- START OF MODIFICATION: Support Build Type in call ---
+      build_type:
+        type: string
+        default: '64'
+      # --- END OF MODIFICATION ---
 
 permissions:
   contents: write
@@ -39,7 +54,7 @@ jobs:
             gh release create "$TAG" \
               --target "${{ github.ref_name }}" \
               --title "Latest Build" \
-              --notes "ScummVM ${{ github.event.inputs.scummvm_version || 'v2026.1.0' }} binaries for spruce" \
+              --notes "ScummVM binaries for spruce" \
             || true
 
       - name: Set up Docker Buildx
@@ -72,21 +87,30 @@ jobs:
             ccache-64-
 
       - name: Build ScummVM
+        # --- START OF MODIFICATION: Pass BUILD_TYPE to Docker ---
         run: |
           mkdir -p output ccache
           docker run --rm \
             -e SCUMMVM_VERSION=${{ github.event.inputs.scummvm_version || 'v2026.1.0' }} \
+            -e BUILD_TYPE=${{ github.event.inputs.build_type || '64' }} \
             -v ${{ github.workspace }}/output:/output \
             -v ${{ github.workspace }}/ccache:/ccache \
             ${{ env.IMAGE }}:latest
+        # --- END OF MODIFICATION ---
 
       - name: Upload binary
         env:
           GH_TOKEN: ${{ github.token }}
+        # --- START OF MODIFICATION: Dynamic filename matching ---
         run: |
-          if [ -f output/scummvm.64.7z ]; then
-            gh release upload "latest" output/scummvm.64.7z --clobber
+          # Use wildcard to find the generated 7z file (e.g., scummvm.64.0330.7z)
+          FILE_PATH=$(ls output/scummvm.*.7z | head -n 1)
+          
+          if [ -f "$FILE_PATH" ]; then
+            echo "Uploading $FILE_PATH to release..."
+            gh release upload "latest" "$FILE_PATH" --clobber
           else
-            echo "Error: output/scummvm.64.7z not found."
+            echo "Error: Generated 7z file not found in output directory."
             exit 1
           fi
+        # --- END OF MODIFICATION ---

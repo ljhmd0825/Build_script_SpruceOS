@@ -15,8 +15,17 @@ fi
 
 cd scummvm
 
-# Apply patches
-for dir in /patches/common /patches/64; do
+# Set build type (64 or 64K) and collect target directories.
+BUILD_TYPE="${BUILD_TYPE:-64}"
+PATCH_DIRS="/patches/common /patches/64"
+
+# Add 64K directory to the loop if requested.
+if [ "$BUILD_TYPE" == "64K" ]; then
+    PATCH_DIRS="/patches/common /patches/64 /patches/64K"
+fi
+
+# Apply standard patches from the defined directories.
+for dir in $PATCH_DIRS; do
     if [ -d "$dir" ] && ls "$dir"/*.patch 1>/dev/null 2>&1; then
         for patch in "$dir"/*.patch; do
             echo "Applying: $(basename "$patch")"
@@ -25,8 +34,8 @@ for dir in /patches/common /patches/64; do
     fi
 done
 
-# Apply Python patches
-for dir in /patches/common /patches/64; do
+# Apply Python patches from the defined directories.
+for dir in $PATCH_DIRS; do
     if [ -d "$dir" ] && ls "$dir"/*.py 1>/dev/null 2>&1; then
         for patch in "$dir"/*.py; do
             echo "Applying: $(basename "$patch")"
@@ -110,6 +119,9 @@ done
 cp -f configure_summary.txt config.log config.h config.mk "$OUT_DIR/logs/"
 
 cd "$OUTPUT_DIR"
-7z a -t7z -m0=lzma2 -mx=9 scummvm.64.7z Emu/
+# Generate dynamic filename based on build type and date ---
+BUILD_DATE=$(date +%m%d)
+OUT_FILENAME="scummvm.${BUILD_TYPE}.${BUILD_DATE}.7z"
+7z a -t7z -m0=lzma2 -mx=9 "$OUT_FILENAME" Emu/
 
-echo "=== Build complete: ${OUTPUT_DIR}/scummvm.64.7z ==="
+echo "=== Build complete: ${OUTPUT_DIR}/${OUT_FILENAME} ==="
