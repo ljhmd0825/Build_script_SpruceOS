@@ -3,7 +3,9 @@ set -e
 
 SCUMMVM_VERSION="${SCUMMVM_VERSION:-v2026.2.0}"
 OUTPUT_DIR="${OUTPUT_DIR:-/output}"
-OUT_DIR="$OUTPUT_DIR/Emu/SCUMMVM"
+EMU_DIR="$OUTPUT_DIR/Emu/SCUMMVM"
+LIB_DIR="$OUTPUT_DIR/lib"
+LOGS_DIR="$OUTPUT_DIR/logs"
 
 echo "=== Building ScummVM ${SCUMMVM_VERSION} for aarch64 (universal 64-bit) ==="
 
@@ -71,27 +73,30 @@ export CCACHE_DIR="${CCACHE_DIR:-/ccache}"
 make -j$(nproc)
 
 # Output
-mkdir -p "$OUT_DIR/LICENSES" "$OUT_DIR/Theme" "$OUT_DIR/Extra" "$OUT_DIR/lib" "$OUT_DIR/logs"
+mkdir -p "$EMU_DIR/LICENSES" "$EMU_DIR/Theme" "$EMU_DIR/Extra"
+mkdir -p "$LIB_DIR"
+mkdir -p "$LOGS_DIR"
 
-cp scummvm "$OUT_DIR/scummvm.64"
-aarch64-linux-gnu-strip "$OUT_DIR/scummvm.64"
+# Binary & Strip
+cp scummvm "$EMU_DIR/scummvm.64"
+aarch64-linux-gnu-strip "$EMU_DIR/scummvm.64"
 
-cp -f LICENSES/* "$OUT_DIR/LICENSES/"
-[ -f dists/soundfonts/COPYRIGHT.Roland_SC-55 ] && cp -f dists/soundfonts/COPYRIGHT.Roland_SC-55 "$OUT_DIR/LICENSES/"
-cp -f gui/themes/*.dat gui/themes/*.zip "$OUT_DIR/Theme/"
-cp -f dists/networking/wwwroot.zip "$OUT_DIR/Theme/"
-cp -f -r dists/engine-data/* "$OUT_DIR/Extra/"
-rm -rf "$OUT_DIR/Extra/patches"
-rm -rf "$OUT_DIR/Extra/testbed-audiocd-files"
-rm -f "$OUT_DIR/Extra/README"
-rm -f "$OUT_DIR/Extra/"*.mk
-rm -f "$OUT_DIR/Extra/"*.sh
-cp -f backends/vkeybd/packs/vkeybd_default.zip "$OUT_DIR/Extra/"
-cp -f backends/vkeybd/packs/vkeybd_small.zip "$OUT_DIR/Extra/"
-[ -f dists/soundfonts/Roland_SC-55.sf2 ] && cp -f dists/soundfonts/Roland_SC-55.sf2 "$OUT_DIR/Extra/"
-mkdir -p "$OUT_DIR/Extra/shaders"
-find engines/ -type f \( -name "*.fragment" -o -name "*.vertex" \) -exec cp -f {} "$OUT_DIR/Extra/shaders/" \;
+# Assets copy
+cp -f LICENSES/* "$EMU_DIR/LICENSES/"
+[ -f dists/soundfonts/COPYRIGHT.Roland_SC-55 ] && cp -f dists/soundfonts/COPYRIGHT.Roland_SC-55 "$EMU_DIR/LICENSES/"
+cp -f gui/themes/*.dat gui/themes/*.zip "$EMU_DIR/Theme/"
+cp -f dists/networking/wwwroot.zip "$EMU_DIR/Theme/"
+cp -f -r dists/engine-data/* "$EMU_DIR/Extra/"
+rm -rf "$EMU_DIR/Extra/patches" "$EMU_DIR/Extra/testbed-audiocd-files"
+rm -f "$EMU_DIR/Extra/README" "$EMU_DIR/Extra/"*.mk "$EMU_DIR/Extra/"*.sh
+cp -f backends/vkeybd/packs/vkeybd_default.zip "$EMU_DIR/Extra/"
+cp -f backends/vkeybd/packs/vkeybd_small.zip "$EMU_DIR/Extra/"
+[ -f dists/soundfonts/Roland_SC-55.sf2 ] && cp -f dists/soundfonts/Roland_SC-55.sf2 "$EMU_DIR/Extra/"
 
+mkdir -p "$EMU_DIR/Extra/shaders"
+find engines/ -type f \( -name "*.fragment" -o -name "*.vertex" \) -exec cp -f {} "$EMU_DIR/Extra/shaders/" \;
+
+# Library Collection (Targeting $LIB_DIR)
 LIBS=(
   "liba52-0.7.4.so" "libasn1.so.8" "libasound.so.2" "libbrotlicommon.so.1"
   "libbrotlidec.so.1" "libbsd.so.0" "libcom_err.so.2" "libcrypt.so.1"
@@ -112,16 +117,18 @@ LIBS=(
 for lib in "${LIBS[@]}"; do
     TARGET=$(find /usr/lib/aarch64-linux-gnu -name "$lib*" -print -quit)
     if [ -n "$TARGET" ]; then
-        cp -L "$TARGET" "$OUT_DIR/lib/$lib"
+        cp -L "$TARGET" "$LIB_DIR/$lib"
     fi
 done
 
-cp -f configure_summary.txt config.log config.h config.mk "$OUT_DIR/logs/"
+# Logs
+cp -f configure_summary.txt config.log config.h config.mk "$LOGS_DIR/"
 
+# Archive (Include Emu, lib, logs as top-level)
 cd "$OUTPUT_DIR"
-# Generate dynamic filename based on build type and date ---
+
 BUILD_DATE=$(date +%m%d)
 OUT_FILENAME="scummvm.${BUILD_TYPE}.${BUILD_DATE}.7z"
-7z a -t7z -m0=lzma2 -mx=9 "$OUT_FILENAME" Emu/
+7z a -t7z -m0=lzma2 -mx=9 "$OUT_FILENAME" Emu/ lib/ logs/
 
 echo "=== Build complete: ${OUTPUT_DIR}/${OUT_FILENAME} ==="
