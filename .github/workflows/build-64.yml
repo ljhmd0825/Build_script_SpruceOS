@@ -5,7 +5,7 @@ on:
     inputs:
       scummvm_version:
         description: 'ScummVM version tag'
-        default: 'v2026.1.0'
+        default: 'v2026.2.0'
       build_type:
         description: 'Select build type (64: Standard, 64K: Korean)'
         required: true
@@ -23,7 +23,7 @@ on:
     inputs:
       scummvm_version:
         type: string
-        default: 'v2026.1.0'
+        default: 'v2026.2.0'
       build_type:
         type: string
         default: '64'
