@@ -59,7 +59,6 @@ export CCACHE_DIR="${CCACHE_DIR:-/ccache}"
 ./configure \
     --host=aarch64-linux-gnu \
     --backend=sdl \
-    --enable-opengl-game \
     --disable-all-engines \
     --enable-opengl \
     --enable-engine=grim \
