@@ -12,7 +12,7 @@ echo "=== Building ScummVM ${SCUMMVM_VERSION} for aarch64 (universal 64-bit) ===
 # Clone ScummVM
 if [ ! -d "scummvm" ]; then
     git clone --depth 1 --branch "$SCUMMVM_VERSION" \
-        https://github.com/ljhmmd0825/scummvm.git
+        https://github.com/ljhmd0825/scummvm.git
 fi
 
 cd scummvm
