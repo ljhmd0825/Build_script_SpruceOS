@@ -5,7 +5,7 @@ on:
     inputs:
       scummvm_version:
         description: 'ScummVM version tag'
-        default: 'v2026.2.0'
+        default: 'v2.8.1'
       build_type:
         description: 'Select build type (64: Standard, 64K: Korean)'
         required: true
@@ -23,7 +23,7 @@ on:
     inputs:
       scummvm_version:
         type: string
-        default: 'v2026.2.0'
+        default: 'v2.8.1'
       build_type:
         type: string
         default: '64'
@@ -44,7 +44,7 @@ jobs:
       - name: Ensure release exists
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_TAG: ${{ github.event.inputs.scummvm_version }}
+          TARGET_TAG: "${{ github.event.inputs.scummvm_version }}-${{ github.ref_name }}"
         run: |
           echo "Target Release: $TARGET_TAG"
           gh release view "$TARGET_TAG" >/dev/null 2>&1 || \
@@ -70,33 +70,33 @@ jobs:
           context: .
           file: Dockerfile.64
           push: true
-          tags: ${{ env.IMAGE }}:latest
-          cache-from: type=registry,ref=${{ env.IMAGE }}:cache
-          cache-to: type=registry,ref=${{ env.IMAGE }}:cache,mode=max
+          tags: ${{ env.IMAGE }}:${{ github.ref_name }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}:cache-${{ github.ref_name }}
+          cache-to: type=registry,ref=${{ env.IMAGE }}:cache-${{ github.ref_name }},mode=max
 
       - name: Restore ccache
         uses: actions/cache@v4
         with:
           path: ccache
-          key: ccache-64-${{ github.event.inputs.scummvm_version || 'v2026.1.0' }}-${{ github.sha }}
+          key: ccache-64-${{ github.event.inputs.scummvm_version }}-${{ github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ccache-64-${{ github.event.inputs.scummvm_version || 'v2026.1.0' }}-
-            ccache-64-
+            ccache-64-${{ github.event.inputs.scummvm_version }}-${{ github.ref_name }}-
+            ccache-64-${{ github.ref_name }}-
 
       - name: Build ScummVM
         run: |
           mkdir -p output ccache
           docker run --rm \
-            -e SCUMMVM_VERSION=${{ github.event.inputs.scummvm_version || 'v2026.1.0' }} \
+            -e SCUMMVM_VERSION=${{ github.event.inputs.scummvm_version }} \
             -e BUILD_TYPE=${{ github.event.inputs.build_type || '64' }} \
             -v ${{ github.workspace }}/output:/output \
             -v ${{ github.workspace }}/ccache:/ccache \
-            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.ref_name }}
 
       - name: Upload binary
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_TAG: ${{ github.event.inputs.scummvm_version }}
+          TARGET_TAG: "${{ github.event.inputs.scummvm_version }}-${{ github.ref_name }}"
         run: |
           FILE_PATH=$(ls output/scummvm.*.7z | head -n 1)
           
