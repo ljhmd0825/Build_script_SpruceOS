@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-SCUMMVM_VERSION="${SCUMMVM_VERSION:-v2026.2.0}"
+SCUMMVM_VERSION="${SCUMMVM_VERSION:-v2.8.1}"
 OUTPUT_DIR="${OUTPUT_DIR:-/output}"
 EMU_DIR="$OUTPUT_DIR/Emu/SCUMMVM"
 LIB_DIR="$OUTPUT_DIR/lib"
@@ -12,7 +12,7 @@ echo "=== Building ScummVM ${SCUMMVM_VERSION} for aarch64 (universal 64-bit) ===
 # Clone ScummVM
 if [ ! -d "scummvm" ]; then
     git clone --depth 1 --branch "$SCUMMVM_VERSION" \
-        https://github.com/scummvm/scummvm.git
+        https://github.com/british-choi/scummvm.git
 fi
 
 cd scummvm
