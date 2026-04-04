@@ -66,7 +66,6 @@ export CCACHE_DIR="${CCACHE_DIR:-/ccache}"
     --disable-debug \
     --disable-eventrecorder \
     --enable-vkeybd \
-    --enable-openmpt \
     --enable-fluidsynth | tee configure_summary.txt
 
 # Build
