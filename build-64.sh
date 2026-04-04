@@ -60,7 +60,6 @@ export CCACHE_DIR="${CCACHE_DIR:-/ccache}"
     --host=aarch64-linux-gnu \
     --backend=sdl \
     --disable-all-engines \
-    --enable-opengl \
     --enable-engine=grim \
     --enable-optimizations \
     --enable-release \
