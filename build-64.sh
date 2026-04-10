@@ -11,11 +11,12 @@ echo "=== Building ScummVM ${SCUMMVM_VERSION} for aarch64 (universal 64-bit) ===
 
 # Clone ScummVM
 if [ ! -d "scummvm" ]; then
-    git clone --depth 1 --branch "$SCUMMVM_VERSION" \
-        https://github.com/scummvm/scummvm.git
+    git clone https://github.com/scummvm/scummvm.git scummvm
 fi
 
 cd scummvm
+git checkout a138bfca3815c8aaf80674eba6e4cf1e139b6e3e
+git reset --hard HEAD
 
 # Set build type (64 or 64K) and collect target directories.
 BUILD_TYPE="${BUILD_TYPE:-64}"
