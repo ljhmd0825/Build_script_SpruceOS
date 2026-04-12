@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-SCUMMVM_VERSION="${SCUMMVM_VERSION:-v2026.2.0}"
+SCUMMVM_VERSION="${SCUMMVM_VERSION:-v2.8.1}"
 OUTPUT_DIR="${OUTPUT_DIR:-/output}"
 EMU_DIR="$OUTPUT_DIR/Emu/SCUMMVM"
 LIB_DIR="$OUTPUT_DIR/lib"
@@ -11,41 +11,10 @@ echo "=== Building ScummVM ${SCUMMVM_VERSION} for aarch64 (universal 64-bit) ===
 
 # Clone ScummVM
 if [ ! -d "scummvm" ]; then
-    git clone https://github.com/scummvm/scummvm.git scummvm
+    git clone -b branch-2-8-1 https://github.com/british-choi/scummvm.git
 fi
 
 cd scummvm
-git checkout 51645a1c8f4f3a3987fcefc2ae32e5a2e51ab24a
-git reset --hard HEAD
-
-# Set build type (64 or 64K) and collect target directories.
-BUILD_TYPE="${BUILD_TYPE:-64}"
-PATCH_DIRS="/patches/common /patches/64"
-
-# Add 64K directory to the loop if requested.
-if [ "$BUILD_TYPE" == "64K" ]; then
-    PATCH_DIRS="/patches/common /patches/64 /patches/64K"
-fi
-
-# Apply standard patches from the defined directories.
-for dir in $PATCH_DIRS; do
-    if [ -d "$dir" ] && ls "$dir"/*.patch 1>/dev/null 2>&1; then
-        for patch in "$dir"/*.patch; do
-            echo "Applying: $(basename "$patch")"
-            git apply "$patch"
-        done
-    fi
-done
-
-# Apply Python patches from the defined directories.
-for dir in $PATCH_DIRS; do
-    if [ -d "$dir" ] && ls "$dir"/*.py 1>/dev/null 2>&1; then
-        for patch in "$dir"/*.py; do
-            echo "Applying: $(basename "$patch")"
-            python3 "$patch"
-        done
-    fi
-done
 
 # Cross-compilation environment
 export CC="ccache aarch64-linux-gnu-gcc"
@@ -60,8 +29,8 @@ export CCACHE_DIR="${CCACHE_DIR:-/ccache}"
 ./configure \
     --host=aarch64-linux-gnu \
     --backend=sdl \
-    --opengl-mode=gles2 \
-    --enable-all-engines \
+    --disable-all-engines \
+    --enable-engine=grim" \
     --enable-optimizations \
     --enable-release \
     --disable-debug \
