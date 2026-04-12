@@ -30,7 +30,7 @@ export CCACHE_DIR="${CCACHE_DIR:-/ccache}"
     --host=aarch64-linux-gnu \
     --backend=sdl \
     --disable-all-engines \
-    --enable-engine=grim" \
+    --enable-engine=grim \
     --enable-optimizations \
     --enable-release \
     --disable-debug \
