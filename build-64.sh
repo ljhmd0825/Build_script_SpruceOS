@@ -15,7 +15,7 @@ if [ ! -d "scummvm" ]; then
 fi
 
 cd scummvm
-git checkout a138bfca3815c8aaf80674eba6e4cf1e139b6e3e
+git checkout 51645a1c8f4f3a3987fcefc2ae32e5a2e51ab24a
 git reset --hard HEAD
 
 # Set build type (64 or 64K) and collect target directories.
