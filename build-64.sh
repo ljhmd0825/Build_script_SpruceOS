@@ -123,7 +123,7 @@ for lib in "${LIBS[@]}"; do
 done
 
 # Logs
-cp -f configure_summary.txt config.log config.h config.mk "$LOGS_DIR/"
+cp -f config.log config.h config.mk "$LOGS_DIR/"
 
 # Archive (Include Emu, lib, logs as top-level)
 cd "$OUTPUT_DIR"
